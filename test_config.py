@@ -56,15 +56,19 @@ def check_git_filter_repo():
 
 def check_python_dependencies():
     """Check if required Python packages are installed."""
-    required_packages = ['PyGithub', 'python-dotenv', 'requests']
+    required_packages = [
+        ('PyGithub', 'github'),
+        ('python-dotenv', 'dotenv'),
+        ('requests', 'requests')
+    ]
     
-    for package in required_packages:
+    for package_name, import_name in required_packages:
         try:
-            __import__(package.lower().replace('-', '_'))
-            print(f"✅ {package}")
+            __import__(import_name)
+            print(f"✅ {package_name}")
         except ImportError:
-            print(f"❌ {package} not installed")
-            print(f"   Install with: pip install {package}")
+            print(f"❌ {package_name} not installed")
+            print(f"   Install with: pip install {package_name}")
             return False
     return True
 
