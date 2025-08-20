@@ -220,15 +220,8 @@ class RepoSplitter:
             result = self.run_git_command(['git', 'rev-parse', 'HEAD'])
             current_commit = result.stdout.strip()
             
-            # Check if main branch already exists and remove it
-            try:
-                self.run_git_command(['git', 'branch', '-D', 'main'], check=False)
-            except subprocess.CalledProcessError:
-                # main branch doesn't exist, which is fine
-                pass
-            
-            # Create a new orphan branch (no history) with the current content
-            self.run_git_command(['git', 'checkout', '--orphan', 'main'])
+            # Create a new orphan branch with a temporary name
+            self.run_git_command(['git', 'checkout', '--orphan', 'temp_main'])
             
             # Add all files from the current state
             self.run_git_command(['git', 'add', '-A'])
@@ -236,8 +229,20 @@ class RepoSplitter:
             # Commit the current state
             self.run_git_command(['git', 'commit', '-m', f'Initial commit from {branch_name} branch'])
             
-            # Remove all other branches
-            self.run_git_command(['git', 'branch', '-D', branch_name])
+            # Remove all other branches (including the original branch)
+            try:
+                self.run_git_command(['git', 'branch', '-D', branch_name], check=False)
+            except subprocess.CalledProcessError:
+                pass
+                
+            # Remove main branch if it exists
+            try:
+                self.run_git_command(['git', 'branch', '-D', 'main'], check=False)
+            except subprocess.CalledProcessError:
+                pass
+            
+            # Rename temp_main to main
+            self.run_git_command(['git', 'branch', '-m', 'temp_main', 'main'])
             
             # Remove remote origin
             self.run_git_command(['git', 'remote', 'remove', 'origin'])
@@ -281,8 +286,13 @@ class RepoSplitter:
             # git filter-repo removes the origin remote, so we just add the new one
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
             
-            # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
+            # Check if we have any commits to push
+            result = self.run_git_command(['git', 'log', '--oneline'], check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                # Push to the new repository
+                self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
+            else:
+                self.logger.warning(f"No commits to push for {repo_name} - repository may be empty")
             
             self.logger.info(f"Successfully extracted common libraries to '{repo_name}'")
     
