@@ -45,13 +45,15 @@ A Python-based AI agent that automatically splits a GitHub monorepo into multipl
 
 4. **Configure the environment**:
    ```bash
-   cp env.template .env
-   # Edit .env with your configuration
+   # The .env file is already created - edit it with your configuration
+   nano .env
+   # or
+   code .env
    ```
 
 ## Configuration
 
-Copy `env.template` to `.env` and configure the following variables:
+The `.env` file is already created. Edit it with your configuration values:
 
 ### Required Variables
 
@@ -68,25 +70,62 @@ Copy `env.template` to `.env` and configure the following variables:
 ### Example Configuration
 
 ```env
+# Monorepo to split (SSH or HTTPS URL)
 SOURCE_REPO_URL=git@github.com:mycompany/monorepo.git
+
+# Comma-separated list of branch names (apps)
 BRANCHES=frontend,backend,mobile,admin,api
+
+# Path for common libraries inside the repo (optional)
 COMMON_PATH=shared/
+
+# GitHub organization or username to create new repos under
 ORG=mycompany
+
+# GitHub Personal Access Token with repo scope
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Optional: OpenAI API Key for AI-powered common file analysis
+# OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Usage
 
-### Basic Usage
+### Quick Start
 
-```bash
-python split_repo_agent.py
-```
+1. **Test your configuration**:
+   ```bash
+   python test_config.py
+   ```
 
-### Dry Run (Test Mode)
+2. **Dry Run (Test Mode)**:
+   ```bash
+   python split_repo_agent.py --dry-run
+   ```
 
-```bash
-python split_repo_agent.py --dry-run
+3. **Actual Execution**:
+   ```bash
+   python split_repo_agent.py
+   ```
+
+### Programmatic Usage
+
+You can also use the agent programmatically:
+
+```python
+from split_repo_agent import RepoSplitter, RepoSplitterConfig
+
+config = RepoSplitterConfig(
+    source_repo_url="git@github.com:org/monorepo.git",
+    branches=["app1", "app2", "app3", "app4", "app5"],
+    common_path="shared/",
+    org="my-org",
+    github_token="ghp_xxx",
+    dry_run=False
+)
+
+with RepoSplitter(config) as splitter:
+    splitter.split_repositories()
 ```
 
 ### Example Output
@@ -151,6 +190,19 @@ mycompany/
 └── common-libs/      # Extracted from COMMON_PATH
 ```
 
+## Project Structure
+
+```
+aiAgent/
+├── split_repo_agent.py    # Main agent script
+├── test_config.py         # Configuration validation script
+├── example_usage.py       # Programmatic usage example
+├── requirements.txt       # Python dependencies
+├── .env                   # Configuration file (edit this)
+├── .gitignore            # Git ignore rules
+└── README.md             # This documentation
+```
+
 ## Error Handling
 
 The agent includes comprehensive error handling:
@@ -163,10 +215,11 @@ The agent includes comprehensive error handling:
 
 ## Security Considerations
 
-- **GitHub Token**: Use a Personal Access Token with minimal required scopes
+- **GitHub Token**: Use a Personal Access Token with minimal required scopes (`repo` scope)
 - **SSH Keys**: Ensure SSH keys are properly configured for private repositories
 - **Temporary Files**: All temporary files are automatically cleaned up
 - **Dry Run**: Always test with `--dry-run` first
+- **Environment File**: Never commit `.env` file to version control (it's already in `.gitignore`)
 
 ## Troubleshooting
 
@@ -213,4 +266,18 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 For issues and questions:
 1. Check the troubleshooting section
 2. Review the logs in `repo_splitter.log`
-3. Create an issue with detailed error information
+3. Run `python test_config.py` to validate your setup
+4. Create an issue with detailed error information
+
+## Next Steps
+
+After setting up your configuration:
+
+1. **Edit `.env`** with your actual values
+2. **Run `python test_config.py`** to validate everything
+3. **Test with `python split_repo_agent.py --dry-run`**
+4. **Execute with `python split_repo_agent.py`**
+
+The agent will create 6 repositories total:
+- 5 app repositories (one for each branch)
+- 1 common-libs repository (if `COMMON_PATH` is specified)
