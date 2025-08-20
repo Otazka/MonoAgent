@@ -48,7 +48,7 @@ class RepoSplitter:
     
     def __init__(self, config: RepoSplitterConfig):
         self.config = config
-        self.github = Github(config.github_token)
+        self.github = None  # Will be initialized after loading config
         self.temp_dir = None
         self.source_repo_path = None
         self.created_repos = []
@@ -88,7 +88,7 @@ class RepoSplitter:
             common_path=os.getenv('COMMON_PATH'),
             org=os.getenv('ORG', ''),
             github_token=os.getenv('GITHUB_TOKEN', ''),
-            dry_run=False
+            dry_run=self.config.dry_run  # Preserve the dry_run flag
         )
         
         # Validate required fields
@@ -103,6 +103,9 @@ class RepoSplitter:
         
         # Clean up branches list
         config.branches = [branch.strip() for branch in config.branches if branch.strip()]
+        
+        # Initialize GitHub client
+        self.github = Github(config.github_token)
         
         self.logger.info(f"Configuration loaded: {len(config.branches)} branches, org: {config.org}")
         return config
@@ -187,7 +190,10 @@ class RepoSplitter:
         
         self.logger.info(f"Extracting branch '{branch_name}' to repository '{repo_name}'")
         
-        if not self.config.dry_run:
+        if self.config.dry_run:
+            self.logger.info(f"[DRY RUN] Would extract branch '{branch_name}' to '{repo_name}'")
+            self.logger.info(f"[DRY RUN] Would push to: {repo_url}")
+        else:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
             
@@ -230,7 +236,10 @@ class RepoSplitter:
         
         self.logger.info(f"Extracting common libraries from '{self.config.common_path}' to '{repo_name}'")
         
-        if not self.config.dry_run:
+        if self.config.dry_run:
+            self.logger.info(f"[DRY RUN] Would extract common libraries from '{self.config.common_path}' to '{repo_name}'")
+            self.logger.info(f"[DRY RUN] Would push to: {repo_url}")
+        else:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, common_repo_path])
             
@@ -262,7 +271,13 @@ class RepoSplitter:
         
         common_files = {}
         
-        if not self.config.dry_run:
+        if self.config.dry_run:
+            self.logger.info("[DRY RUN] Would analyze common files across branches")
+            # In dry-run mode, just simulate the analysis
+            for branch in self.config.branches:
+                common_files[branch] = [f"example_file_{branch}.py", f"config_{branch}.json"]
+            self.logger.info(f"[DRY RUN] Would find common files across {len(self.config.branches)} branches")
+        else:
             # Get all branches
             os.chdir(self.source_repo_path)
             result = self.run_git_command(['git', 'branch', '-r'])
