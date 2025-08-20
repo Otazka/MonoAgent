@@ -153,7 +153,8 @@ class RepoSplitter:
                 existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
                 self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
                 return existing_repo.clone_url
-            except GithubException:
+            except GithubException as e:
+                # Repository doesn't exist, continue with creation
                 pass
             
             # Create new repository
@@ -181,6 +182,15 @@ class RepoSplitter:
             return repo.clone_url
             
         except GithubException as e:
+            # Check if it's a "name already exists" error
+            if "name already exists" in str(e):
+                try:
+                    # Try to get the existing repository
+                    existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
+                    self.logger.warning(f"Repository {repo_name} already exists, using existing repository")
+                    return existing_repo.clone_url
+                except GithubException:
+                    pass
             self.logger.error(f"Failed to create repository {repo_name}: {e}")
             return None
     
@@ -206,14 +216,28 @@ class RepoSplitter:
             # Checkout the specific branch
             self.run_git_command(['git', 'checkout', branch_name])
             
-            # Create a new branch from the current state
-            self.run_git_command(['git', 'checkout', '-b', 'temp_branch'])
+            # Get the current commit hash
+            result = self.run_git_command(['git', 'rev-parse', 'HEAD'])
+            current_commit = result.stdout.strip()
             
-            # Remove all other branches except the current one
+            # Check if main branch already exists and remove it
+            try:
+                self.run_git_command(['git', 'branch', '-D', 'main'], check=False)
+            except subprocess.CalledProcessError:
+                # main branch doesn't exist, which is fine
+                pass
+            
+            # Create a new orphan branch (no history) with the current content
+            self.run_git_command(['git', 'checkout', '--orphan', 'main'])
+            
+            # Add all files from the current state
+            self.run_git_command(['git', 'add', '-A'])
+            
+            # Commit the current state
+            self.run_git_command(['git', 'commit', '-m', f'Initial commit from {branch_name} branch'])
+            
+            # Remove all other branches
             self.run_git_command(['git', 'branch', '-D', branch_name])
-            
-            # Rename temp_branch to main
-            self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
             
             # Remove remote origin
             self.run_git_command(['git', 'remote', 'remove', 'origin'])
@@ -254,10 +278,7 @@ class RepoSplitter:
                 '--force'
             ])
             
-            # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'])
-            
-            # Add new remote
+            # git filter-repo removes the origin remote, so we just add the new one
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
             
             # Push to the new repository
@@ -351,12 +372,21 @@ class RepoSplitter:
             self.logger.info("=" * 50)
             self.logger.info("REPOSITORY SPLITTING COMPLETED")
             self.logger.info("=" * 50)
-            self.logger.info(f"Created {len(self.created_repos)} repositories:")
-            for repo in self.created_repos:
-                self.logger.info(f"  - {repo}")
             
             if self.config.dry_run:
+                # In dry-run mode, show what would be created
+                total_repos = len(self.config.branches) + (1 if self.config.common_path else 0)
+                self.logger.info(f"Would create {total_repos} repositories:")
+                for branch in self.config.branches:
+                    self.logger.info(f"  - {branch}-app")
+                if self.config.common_path:
+                    self.logger.info(f"  - common-libs")
                 self.logger.info("This was a dry run - no actual changes were made")
+            else:
+                # In live mode, show what was actually created
+                self.logger.info(f"Created {len(self.created_repos)} repositories:")
+                for repo in self.created_repos:
+                    self.logger.info(f"  - {repo}")
             
         except Exception as e:
             self.logger.error(f"Error during repository splitting: {e}")
