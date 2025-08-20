@@ -93,37 +93,19 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### Quick Start
 
-1. **Setup Environment** (if not already done):
-   ```bash
-   cd aiAgent
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Test your configuration**:
+1. **Test your configuration**:
    ```bash
    python test_config.py
    ```
 
-3. **Run the Agent**:
-
-   **Option 1: Using the run script (Recommended)**:
+2. **Dry Run (Test Mode)**:
    ```bash
-   # Dry run (test mode)
-   ./run.sh --dry-run
-   
-   # Actual execution
-   ./run.sh
+   python split_repo_agent.py --dry-run
    ```
 
-   **Option 2: Direct Python execution**:
+3. **Actual Execution**:
    ```bash
-   # Dry run (test mode)
-   source venv/bin/activate && python split_repo_agent.py --dry-run
-   
-   # Actual execution
-   source venv/bin/activate && python split_repo_agent.py
+   python split_repo_agent.py
    ```
 
 ### Programmatic Usage

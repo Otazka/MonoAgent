@@ -48,7 +48,7 @@ class RepoSplitter:
     
     def __init__(self, config: RepoSplitterConfig):
         self.config = config
-        self.github = None  # Will be initialized after loading config
+        self.github = Github(config.github_token)
         self.temp_dir = None
         self.source_repo_path = None
         self.created_repos = []
@@ -88,7 +88,7 @@ class RepoSplitter:
             common_path=os.getenv('COMMON_PATH'),
             org=os.getenv('ORG', ''),
             github_token=os.getenv('GITHUB_TOKEN', ''),
-            dry_run=self.config.dry_run  # Preserve the dry_run flag
+            dry_run=False
         )
         
         # Validate required fields
@@ -103,9 +103,6 @@ class RepoSplitter:
         
         # Clean up branches list
         config.branches = [branch.strip() for branch in config.branches if branch.strip()]
-        
-        # Initialize GitHub client
-        self.github = Github(config.github_token)
         
         self.logger.info(f"Configuration loaded: {len(config.branches)} branches, org: {config.org}")
         return config
@@ -153,8 +150,7 @@ class RepoSplitter:
                 existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
                 self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
                 return existing_repo.clone_url
-            except GithubException as e:
-                # Repository doesn't exist, continue with creation
+            except GithubException:
                 pass
             
             # Create new repository
@@ -182,15 +178,6 @@ class RepoSplitter:
             return repo.clone_url
             
         except GithubException as e:
-            # Check if it's a "name already exists" error
-            if "name already exists" in str(e):
-                try:
-                    # Try to get the existing repository
-                    existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
-                    self.logger.warning(f"Repository {repo_name} already exists, using existing repository")
-                    return existing_repo.clone_url
-                except GithubException:
-                    pass
             self.logger.error(f"Failed to create repository {repo_name}: {e}")
             return None
     
@@ -200,10 +187,7 @@ class RepoSplitter:
         
         self.logger.info(f"Extracting branch '{branch_name}' to repository '{repo_name}'")
         
-        if self.config.dry_run:
-            self.logger.info(f"[DRY RUN] Would extract branch '{branch_name}' to '{repo_name}'")
-            self.logger.info(f"[DRY RUN] Would push to: {repo_url}")
-        else:
+        if not self.config.dry_run:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
             
@@ -216,33 +200,21 @@ class RepoSplitter:
             # Checkout the specific branch
             self.run_git_command(['git', 'checkout', branch_name])
             
-            # Get the current commit hash
-            result = self.run_git_command(['git', 'rev-parse', 'HEAD'])
-            current_commit = result.stdout.strip()
+            # Create a new branch from the current state
+            self.run_git_command(['git', 'checkout', '-b', 'temp_branch'])
             
-            # Create a new orphan branch with a temporary name
-            self.run_git_command(['git', 'checkout', '--orphan', 'temp_main'])
+            # Remove all other branches except the current one
+            self.run_git_command(['git', 'branch', '-D', branch_name])
             
-            # Add all files from the current state
-            self.run_git_command(['git', 'add', '-A'])
-            
-            # Commit the current state
-            self.run_git_command(['git', 'commit', '-m', f'Initial commit from {branch_name} branch'])
-            
-            # Remove all other branches (including the original branch)
+            # Check if main branch exists and handle it
             try:
-                self.run_git_command(['git', 'branch', '-D', branch_name], check=False)
+                # Try to rename temp_branch to main
+                self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
             except subprocess.CalledProcessError:
-                pass
-                
-            # Remove main branch if it exists
-            try:
-                self.run_git_command(['git', 'branch', '-D', 'main'], check=False)
-            except subprocess.CalledProcessError:
-                pass
-            
-            # Rename temp_main to main
-            self.run_git_command(['git', 'branch', '-m', 'temp_main', 'main'])
+                # If main already exists, delete it first
+                self.logger.info("Main branch already exists, removing it first")
+                self.run_git_command(['git', 'branch', '-D', 'main'])
+                self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
             
             # Remove remote origin
             self.run_git_command(['git', 'remote', 'remove', 'origin'])
@@ -265,10 +237,7 @@ class RepoSplitter:
         
         self.logger.info(f"Extracting common libraries from '{self.config.common_path}' to '{repo_name}'")
         
-        if self.config.dry_run:
-            self.logger.info(f"[DRY RUN] Would extract common libraries from '{self.config.common_path}' to '{repo_name}'")
-            self.logger.info(f"[DRY RUN] Would push to: {repo_url}")
-        else:
+        if not self.config.dry_run:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, common_repo_path])
             
@@ -283,16 +252,25 @@ class RepoSplitter:
                 '--force'
             ])
             
-            # git filter-repo removes the origin remote, so we just add the new one
+            # Check if main branch exists after filtering
+            result = self.run_git_command(['git', 'branch', '--list', 'main'], check=False)
+            if not result.stdout.strip():
+                # No main branch, create one from the current HEAD
+                self.logger.info("No main branch found after filtering, creating one")
+                self.run_git_command(['git', 'checkout', '-b', 'main'])
+            
+            # Remove remote origin if it exists
+            try:
+                self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            except subprocess.CalledProcessError:
+                # Remote doesn't exist, which is fine
+                pass
+            
+            # Add new remote
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
             
-            # Check if we have any commits to push
-            result = self.run_git_command(['git', 'log', '--oneline'], check=False)
-            if result.returncode == 0 and result.stdout.strip():
-                # Push to the new repository
-                self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
-            else:
-                self.logger.warning(f"No commits to push for {repo_name} - repository may be empty")
+            # Push to the new repository
+            self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
             
             self.logger.info(f"Successfully extracted common libraries to '{repo_name}'")
     
@@ -302,13 +280,7 @@ class RepoSplitter:
         
         common_files = {}
         
-        if self.config.dry_run:
-            self.logger.info("[DRY RUN] Would analyze common files across branches")
-            # In dry-run mode, just simulate the analysis
-            for branch in self.config.branches:
-                common_files[branch] = [f"example_file_{branch}.py", f"config_{branch}.json"]
-            self.logger.info(f"[DRY RUN] Would find common files across {len(self.config.branches)} branches")
-        else:
+        if not self.config.dry_run:
             # Get all branches
             os.chdir(self.source_repo_path)
             result = self.run_git_command(['git', 'branch', '-r'])
@@ -382,21 +354,12 @@ class RepoSplitter:
             self.logger.info("=" * 50)
             self.logger.info("REPOSITORY SPLITTING COMPLETED")
             self.logger.info("=" * 50)
+            self.logger.info(f"Created {len(self.created_repos)} repositories:")
+            for repo in self.created_repos:
+                self.logger.info(f"  - {repo}")
             
             if self.config.dry_run:
-                # In dry-run mode, show what would be created
-                total_repos = len(self.config.branches) + (1 if self.config.common_path else 0)
-                self.logger.info(f"Would create {total_repos} repositories:")
-                for branch in self.config.branches:
-                    self.logger.info(f"  - {branch}-app")
-                if self.config.common_path:
-                    self.logger.info(f"  - common-libs")
                 self.logger.info("This was a dry run - no actual changes were made")
-            else:
-                # In live mode, show what was actually created
-                self.logger.info(f"Created {len(self.created_repos)} repositories:")
-                for repo in self.created_repos:
-                    self.logger.info(f"  - {repo}")
             
         except Exception as e:
             self.logger.error(f"Error during repository splitting: {e}")
@@ -410,15 +373,31 @@ def main():
     args = parser.parse_args()
     
     try:
-        # Create config with dry-run flag
+        # Load configuration from environment first
+        load_dotenv()
+        
+        # Create config with actual values from environment
         config = RepoSplitterConfig(
-            source_repo_url='',  # Will be loaded from .env
-            branches=[],
-            common_path=None,
-            org='',
-            github_token='',
+            source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
+            branches=os.getenv('BRANCHES', '').split(','),
+            common_path=os.getenv('COMMON_PATH'),
+            org=os.getenv('ORG', ''),
+            github_token=os.getenv('GITHUB_TOKEN', ''),
             dry_run=args.dry_run
         )
+        
+        # Validate required fields
+        if not config.source_repo_url:
+            raise ValueError("SOURCE_REPO_URL is required")
+        if not config.branches or config.branches == ['']:
+            raise ValueError("BRANCHES is required")
+        if not config.org:
+            raise ValueError("ORG is required")
+        if not config.github_token:
+            raise ValueError("GITHUB_TOKEN is required")
+        
+        # Clean up branches list
+        config.branches = [branch.strip() for branch in config.branches if branch.strip()]
         
         with RepoSplitter(config) as splitter:
             splitter.split_repositories()
