@@ -13,6 +13,7 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **📊 Comprehensive Reporting**: Detailed analysis reports with recommendations
 - **🛡️ Dry-Run Mode**: Preview changes before applying them
 - **🎨 Customizable**: Configurable repository naming, privacy settings, and branch defaults
+- **📈 Progress Tracking**: Real-time progress bars for all large operations
 
 ## 🚀 Quick Start
 
@@ -110,6 +111,18 @@ The tool uses intelligent pattern recognition to:
 3. **Analyze Dependencies**: Maps relationships between projects and components
 4. **Generate Recommendations**: Suggests optimal splitting strategies
 
+### Progress Tracking
+
+The tool provides real-time progress bars for all major operations:
+
+- **📁 File Scanning**: Shows progress while scanning repository files
+- **🔍 Project Detection**: Tracks progress of project and component detection
+- **🔗 Dependency Analysis**: Shows progress of dependency mapping
+- **📝 Repository Creation**: Tracks GitHub API calls and repository creation
+- **📦 Project Extraction**: Shows step-by-step progress of git operations
+- **🌿 Branch Extraction**: Tracks branch-specific operations
+- **🚀 Overall Progress**: Shows overall repository creation progress
+
 ### Splitting Modes
 
 #### Auto Mode
@@ -166,12 +179,12 @@ The project includes GitHub Actions workflows for:
 
 ```
 🔍 Starting AI-powered monorepo analysis...
-📁 Detecting projects and applications...
-  ✅ Detected nodejs project: frontend at apps/frontend
-  ✅ Detected python project: backend at apps/backend
-🔧 Detecting common components and shared libraries...
-  ✅ Detected common component: utils at shared/utils
-🔗 Analyzing dependencies between projects...
+📁 Scanning files: 100%|██████████| 1500/1500 [00:02<00:00, 750.00 files/s]
+🔍 Grouping files by directory: 100%|██████████| 1500/1500 [00:01<00:00, 1500.00 files/s]
+🎯 Detecting projects: 100%|██████████| 50/50 [00:03<00:00, 16.67 dirs/s]
+🏗️  Analyzing directory structure: 100%|██████████| 1500/1500 [00:05<00:00, 300.00 files/s]
+🔧 Detecting common components: 100%|██████████| 1500/1500 [00:02<00:00, 750.00 files/s]
+🔗 Analyzing dependencies: 100%|██████████| 200/200 [00:10<00:00, 20.00 files/s]
 📊 Generating analysis report...
 
 📋 MONOREPO ANALYSIS SUMMARY
@@ -185,10 +198,13 @@ The project includes GitHub Actions workflows for:
   • Split 2 detected projects into separate repositories
   • Extract 1 common components into shared libraries
 
-🚀 Starting repository splitting...
-✅ Created repository: frontend-app
-✅ Created repository: backend-app
-✅ Created repository: utils-lib
+🚀 Creating repositories: 100%|██████████| 3/3 [01:30<00:00, 30.00s/repo]
+📝 Creating frontend-app: 100%|██████████| 1/1 [00:05<00:00, 5.00s/attempt]
+📦 Extracting frontend: 100%|██████████| 7/7 [00:45<00:00, 6.43s/step]
+📝 Creating backend-app: 100%|██████████| 1/1 [00:03<00:00, 3.00s/attempt]
+📦 Extracting backend: 100%|██████████| 7/7 [00:38<00:00, 5.43s/step]
+📝 Creating utils-lib: 100%|██████████| 1/1 [00:02<00:00, 2.00s/attempt]
+🔧 Extracting utils: 100%|██████████| 7/7 [00:25<00:00, 3.57s/step]
 ✅ Successfully split monorepo into 3 repositories!
 ```
 

@@ -38,6 +38,7 @@ import time
 import requests
 from dotenv import load_dotenv
 from github import Github, GithubException
+from tqdm import tqdm
 
 
 @dataclass
@@ -118,15 +119,26 @@ class MonorepoAnalyzer:
     def _get_all_files(self) -> List[str]:
         """Get all files in the repository."""
         files = []
+        
+        # First, count total files for progress bar
+        total_files = 0
         for root, dirs, filenames in os.walk(self.repo_path):
-            # Skip .git directory
             if '.git' in dirs:
                 dirs.remove('.git')
-            
-            for filename in filenames:
-                file_path = os.path.join(root, filename)
-                rel_path = os.path.relpath(file_path, self.repo_path)
-                files.append(rel_path)
+            total_files += len(filenames)
+        
+        # Now collect files with progress bar
+        with tqdm(total=total_files, desc="📁 Scanning files", unit="file") as pbar:
+            for root, dirs, filenames in os.walk(self.repo_path):
+                # Skip .git directory
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                
+                for filename in filenames:
+                    file_path = os.path.join(root, filename)
+                    rel_path = os.path.relpath(file_path, self.repo_path)
+                    files.append(rel_path)
+                    pbar.update(1)
         
         return files
     
@@ -169,27 +181,31 @@ class MonorepoAnalyzer:
         
         # Group files by directory
         dir_files = defaultdict(list)
-        for file_path in all_files:
-            dir_path = os.path.dirname(file_path)
-            dir_files[dir_path].append(file_path)
+        with tqdm(total=len(all_files), desc="🔍 Grouping files by directory", unit="file") as pbar:
+            for file_path in all_files:
+                dir_path = os.path.dirname(file_path)
+                dir_files[dir_path].append(file_path)
+                pbar.update(1)
         
         # Detect projects based on indicators
-        for dir_path, files in dir_files.items():
-            for file_name in files:
-                if file_name in project_indicators:
-                    project_type = project_indicators[file_name]
-                    project_name = self._extract_project_name(dir_path, file_name)
-                    
-                    if project_name not in self.projects:
-                        self.projects[project_name] = ProjectInfo(
-                            name=project_name,
-                            path=dir_path,
-                            type=project_type,
-                            files=files,
-                            size=len(files)
-                        )
-                        self.logger.info(f"  ✅ Detected {project_type} project: {project_name} at {dir_path}")
-                    break
+        with tqdm(total=len(dir_files), desc="🎯 Detecting projects", unit="dir") as pbar:
+            for dir_path, files in dir_files.items():
+                for file_name in files:
+                    if file_name in project_indicators:
+                        project_type = project_indicators[file_name]
+                        project_name = self._extract_project_name(dir_path, file_name)
+                        
+                        if project_name not in self.projects:
+                            self.projects[project_name] = ProjectInfo(
+                                name=project_name,
+                                path=dir_path,
+                                type=project_type,
+                                files=files,
+                                size=len(files)
+                            )
+                            self.logger.info(f"  ✅ Detected {project_type} project: {project_name} at {dir_path}")
+                        break
+                pbar.update(1)
         
         # Detect additional projects based on directory structure
         self._detect_by_directory_structure(all_files)
@@ -219,24 +235,26 @@ class MonorepoAnalyzer:
             r'projects?/([^/]+)'
         ]
         
-        for file_path in all_files:
-            for pattern in app_patterns:
-                match = re.search(pattern, file_path)
-                if match:
-                    project_name = match.group(1)
-                    if project_name not in self.projects:
-                        # Check if this directory has substantial content
-                        dir_path = os.path.dirname(file_path)
-                        if self._is_substantial_project(dir_path, all_files):
-                            self.projects[project_name] = ProjectInfo(
-                                name=project_name,
-                                path=dir_path,
-                                type='app',
-                                files=[f for f in all_files if f.startswith(dir_path)],
-                                size=len([f for f in all_files if f.startswith(dir_path)])
-                            )
-                            self.logger.info(f"  ✅ Detected app project: {project_name} at {dir_path}")
-                    break
+        with tqdm(total=len(all_files), desc="🏗️  Analyzing directory structure", unit="file") as pbar:
+            for file_path in all_files:
+                for pattern in app_patterns:
+                    match = re.search(pattern, file_path)
+                    if match:
+                        project_name = match.group(1)
+                        if project_name not in self.projects:
+                            # Check if this directory has substantial content
+                            dir_path = os.path.dirname(file_path)
+                            if self._is_substantial_project(dir_path, all_files):
+                                self.projects[project_name] = ProjectInfo(
+                                    name=project_name,
+                                    path=dir_path,
+                                    type='app',
+                                    files=[f for f in all_files if f.startswith(dir_path)],
+                                    size=len([f for f in all_files if f.startswith(dir_path)])
+                                )
+                                self.logger.info(f"  ✅ Detected app project: {project_name} at {dir_path}")
+                        break
+                pbar.update(1)
     
     def _is_substantial_project(self, dir_path: str, all_files: List[str]) -> bool:
         """Check if a directory contains a substantial project."""
@@ -267,35 +285,42 @@ class MonorepoAnalyzer:
             r'modules?/([^/]+)'
         ]
         
-        for file_path in all_files:
-            for pattern in common_patterns:
-                match = re.search(pattern, file_path)
-                if match:
-                    component_name = match.group(1)
-                    if component_name not in self.common_components:
-                        dir_path = os.path.dirname(file_path)
-                        component_files = [f for f in all_files if f.startswith(dir_path)]
-                        
-                        self.common_components[component_name] = CommonComponent(
-                            name=component_name,
-                            path=dir_path,
-                            files=component_files
-                        )
-                        self.logger.info(f"  ✅ Detected common component: {component_name} at {dir_path}")
-                    break
+        with tqdm(total=len(all_files), desc="🔧 Detecting common components", unit="file") as pbar:
+            for file_path in all_files:
+                for pattern in common_patterns:
+                    match = re.search(pattern, file_path)
+                    if match:
+                        component_name = match.group(1)
+                        if component_name not in self.common_components:
+                            dir_path = os.path.dirname(file_path)
+                            component_files = [f for f in all_files if f.startswith(dir_path)]
+                            
+                            self.common_components[component_name] = CommonComponent(
+                                name=component_name,
+                                path=dir_path,
+                                files=component_files
+                            )
+                            self.logger.info(f"  ✅ Detected common component: {component_name} at {dir_path}")
+                        break
+                pbar.update(1)
     
     def _analyze_dependencies(self):
         """Analyze dependencies between projects and components."""
         self.logger.info("🔗 Analyzing dependencies between projects...")
         
-        for project_name, project in self.projects.items():
-            for file_path in project.files:
-                if file_path.endswith(('.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go')):
-                    dependencies = self._extract_dependencies(file_path)
-                    project.dependencies.extend(dependencies)
-            
-            # Remove duplicates
-            project.dependencies = list(set(project.dependencies))
+        total_files = sum(len([f for f in project.files if f.endswith(('.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go'))]) 
+                         for project in self.projects.values())
+        
+        with tqdm(total=total_files, desc="🔗 Analyzing dependencies", unit="file") as pbar:
+            for project_name, project in self.projects.items():
+                for file_path in project.files:
+                    if file_path.endswith(('.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go')):
+                        dependencies = self._extract_dependencies(file_path)
+                        project.dependencies.extend(dependencies)
+                        pbar.update(1)
+                
+                # Remove duplicates
+                project.dependencies = list(set(project.dependencies))
     
     def _extract_dependencies(self, file_path: str) -> List[str]:
         """Extract dependencies from a source file."""
@@ -524,10 +549,13 @@ class RepoSplitter:
         
         self.logger.info(f"Cloning source repository: {self.config.source_repo_url}")
         self.logger.info(f"Temporary directory: {self.temp_dir}")
-        # Always clone for analysis and local filtering (safe in dry-run)
-        self.run_git_command([
-            'git', 'clone', '--mirror', self.config.source_repo_url, self.source_repo_path
-        ])
+        
+        # Show progress for cloning
+        with tqdm(desc="📥 Cloning repository", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
+            # Always clone for analysis and local filtering (safe in dry-run)
+            self.run_git_command([
+                'git', 'clone', '--mirror', self.config.source_repo_url, self.source_repo_path
+            ])
         
         return self.source_repo_path
     
@@ -554,42 +582,46 @@ class RepoSplitter:
             self.logger.info(f"[DRY RUN] Would create repo: {repo_name}")
             return f"https://github.com/{self.config.org}/{repo_name}.git"
         
-        last_exc: Optional[Exception] = None
-        for attempt in range(1, 4):
-            try:
-                # Check if repo already exists
+        with tqdm(desc=f"📝 Creating {repo_name}", unit="attempt", total=3) as pbar:
+            last_exc: Optional[Exception] = None
+            for attempt in range(1, 4):
                 try:
-                    existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
-                    self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
-                    return existing_repo.clone_url
-                except GithubException:
-                    pass
-                
-                # Try as organization first; fallback to user
-                try:
-                    org = self.github.get_organization(self.config.org)
-                    repo = org.create_repo(
-                        name=repo_name,
-                        description=description,
-                        private=self.config.private_repos,
-                        auto_init=False
-                    )
-                except GithubException:
-                    user = self.github.get_user()
-                    repo = user.create_repo(
-                        name=repo_name,
-                        description=description,
-                        private=self.config.private_repos,
-                        auto_init=False
-                    )
-                
-                self.logger.info(f"Created repository: {repo_name}")
-                self.created_repos.append(repo_name)
-                return repo.clone_url
-            except GithubException as e:
-                last_exc = e
-                self.logger.warning(f"GitHub API error creating {repo_name} (attempt {attempt}/3): {e}")
-                time.sleep(min(2 ** attempt, 8))
+                    # Check if repo already exists
+                    try:
+                        existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
+                        self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
+                        pbar.update(1)
+                        return existing_repo.clone_url
+                    except GithubException:
+                        pass
+                    
+                    # Try as organization first; fallback to user
+                    try:
+                        org = self.github.get_organization(self.config.org)
+                        repo = org.create_repo(
+                            name=repo_name,
+                            description=description,
+                            private=self.config.private_repos,
+                            auto_init=False
+                        )
+                    except GithubException:
+                        user = self.github.get_user()
+                        repo = user.create_repo(
+                            name=repo_name,
+                            description=description,
+                            private=self.config.private_repos,
+                            auto_init=False
+                        )
+                    
+                    self.logger.info(f"Created repository: {repo_name}")
+                    self.created_repos.append(repo_name)
+                    pbar.update(1)
+                    return repo.clone_url
+                except GithubException as e:
+                    last_exc = e
+                    self.logger.warning(f"GitHub API error creating {repo_name} (attempt {attempt}/3): {e}")
+                    time.sleep(min(2 ** attempt, 8))
+                    pbar.update(1)
         
         self.logger.error(f"Failed to create repository {repo_name}: {last_exc}")
         return None
@@ -601,33 +633,42 @@ class RepoSplitter:
         self.logger.info(f"Extracting project '{project.name}' to repository '{repo_name}'")
         
         if not self.config.dry_run:
-            # Clone the mirror repo
-            self.run_git_command(['git', 'clone', self.source_repo_path, project_repo_path])
-            
-            # Validate project path exists
-            target_path = os.path.join(project_repo_path, project.path)
-            if not os.path.exists(target_path):
-                self.logger.error(f"Project path does not exist in repo: {project.path}")
-                return
-            
-            # Use git filter-repo to extract only the project path
-            self.run_git_command([
-                'git', 'filter-repo',
-                '--path', project.path,
-                '--path-rename', f'{project.path}:',
-                '--force'
-            ], cwd=project_repo_path)
-            
-            # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=project_repo_path)
-            
-            # Add new remote
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=project_repo_path)
-            
-            # Ensure default branch name
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=project_repo_path)
-            # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=project_repo_path)
+            with tqdm(total=7, desc=f"📦 Extracting {project.name}", unit="step") as pbar:
+                # Clone the mirror repo
+                self.run_git_command(['git', 'clone', self.source_repo_path, project_repo_path])
+                pbar.update(1)
+                
+                # Validate project path exists
+                target_path = os.path.join(project_repo_path, project.path)
+                if not os.path.exists(target_path):
+                    self.logger.error(f"Project path does not exist in repo: {project.path}")
+                    return
+                pbar.update(1)
+                
+                # Use git filter-repo to extract only the project path
+                self.run_git_command([
+                    'git', 'filter-repo',
+                    '--path', project.path,
+                    '--path-rename', f'{project.path}:',
+                    '--force'
+                ], cwd=project_repo_path)
+                pbar.update(1)
+                
+                # Remove remote origin
+                self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=project_repo_path)
+                pbar.update(1)
+                
+                # Add new remote
+                self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=project_repo_path)
+                pbar.update(1)
+                
+                # Ensure default branch name
+                self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=project_repo_path)
+                pbar.update(1)
+                
+                # Push to the new repository
+                self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=project_repo_path)
+                pbar.update(1)
             
             self.logger.info(f"Successfully extracted project '{project.name}' to '{repo_name}'")
     
@@ -638,33 +679,42 @@ class RepoSplitter:
         self.logger.info(f"Extracting common component '{component.name}' to repository '{repo_name}'")
         
         if not self.config.dry_run:
-            # Clone the mirror repo
-            self.run_git_command(['git', 'clone', self.source_repo_path, component_repo_path])
-            
-            # Validate component path exists
-            target_path = os.path.join(component_repo_path, component.path)
-            if not os.path.exists(target_path):
-                self.logger.error(f"Common component path does not exist in repo: {component.path}")
-                return
-            
-            # Use git filter-repo to extract only the component path
-            self.run_git_command([
-                'git', 'filter-repo',
-                '--path', component.path,
-                '--path-rename', f'{component.path}:',
-                '--force'
-            ], cwd=component_repo_path)
-            
-            # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=component_repo_path)
-            
-            # Add new remote
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=component_repo_path)
-            
-            # Ensure default branch name
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=component_repo_path)
-            # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=component_repo_path)
+            with tqdm(total=7, desc=f"🔧 Extracting {component.name}", unit="step") as pbar:
+                # Clone the mirror repo
+                self.run_git_command(['git', 'clone', self.source_repo_path, component_repo_path])
+                pbar.update(1)
+                
+                # Validate component path exists
+                target_path = os.path.join(component_repo_path, component.path)
+                if not os.path.exists(target_path):
+                    self.logger.error(f"Common component path does not exist in repo: {component.path}")
+                    return
+                pbar.update(1)
+                
+                # Use git filter-repo to extract only the component path
+                self.run_git_command([
+                    'git', 'filter-repo',
+                    '--path', component.path,
+                    '--path-rename', f'{component.path}:',
+                    '--force'
+                ], cwd=component_repo_path)
+                pbar.update(1)
+                
+                # Remove remote origin
+                self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=component_repo_path)
+                pbar.update(1)
+                
+                # Add new remote
+                self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=component_repo_path)
+                pbar.update(1)
+                
+                # Ensure default branch name
+                self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=component_repo_path)
+                pbar.update(1)
+                
+                # Push to the new repository
+                self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=component_repo_path)
+                pbar.update(1)
             
             self.logger.info(f"Successfully extracted common component '{component.name}' to '{repo_name}'")
 
@@ -673,36 +723,52 @@ class RepoSplitter:
         branch_repo_path = os.path.join(self.temp_dir, f"branch_{branch_name}")
         self.logger.info(f"Extracting branch '{branch_name}' to repository '{repo_name}'")
         if not self.config.dry_run:
-            # Clone the mirror repo to working copy
-            self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
-            
-            # Validate branch exists
-            exists = True
-            try:
-                self.run_git_command(['git', 'show-ref', '--verify', f'refs/heads/{branch_name}'], cwd=branch_repo_path)
-            except Exception:
+            with tqdm(total=8, desc=f"🌿 Extracting {branch_name}", unit="step") as pbar:
+                # Clone the mirror repo to working copy
+                self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
+                pbar.update(1)
+                
+                # Validate branch exists
+                exists = True
                 try:
-                    self.run_git_command(['git', 'show-ref', '--verify', f'refs/remotes/origin/{branch_name}'], cwd=branch_repo_path)
+                    self.run_git_command(['git', 'show-ref', '--verify', f'refs/heads/{branch_name}'], cwd=branch_repo_path)
                 except Exception:
-                    exists = False
-            if not exists:
-                self.logger.error(f"Branch does not exist: {branch_name}")
-                return
-            # Checkout target branch (create local tracking)
-            # Try both local and origin refs
-            try:
-                self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
-            except Exception:
-                self.run_git_command(['git', 'checkout', f'origin/{branch_name}'], cwd=branch_repo_path)
-                self.run_git_command(['git', 'branch', branch_name, f'origin/{branch_name}'], cwd=branch_repo_path)
-                self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
-            # Rename to default branch if needed
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=branch_repo_path)
-            # Remove and add new remote
-            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=branch_repo_path)
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=branch_repo_path)
-            # Push
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=branch_repo_path)
+                    try:
+                        self.run_git_command(['git', 'show-ref', '--verify', f'refs/remotes/origin/{branch_name}'], cwd=branch_repo_path)
+                    except Exception:
+                        exists = False
+                if not exists:
+                    self.logger.error(f"Branch does not exist: {branch_name}")
+                    return
+                pbar.update(1)
+                
+                # Checkout target branch (create local tracking)
+                # Try both local and origin refs
+                try:
+                    self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
+                except Exception:
+                    self.run_git_command(['git', 'checkout', f'origin/{branch_name}'], cwd=branch_repo_path)
+                    self.run_git_command(['git', 'branch', branch_name, f'origin/{branch_name}'], cwd=branch_repo_path)
+                    self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
+                pbar.update(1)
+                
+                # Rename to default branch if needed
+                self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=branch_repo_path)
+                pbar.update(1)
+                
+                # Remove and add new remote
+                self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=branch_repo_path)
+                pbar.update(1)
+                
+                self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=branch_repo_path)
+                pbar.update(1)
+                
+                # Push
+                self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=branch_repo_path)
+                pbar.update(1)
+                
+                pbar.update(1)  # Final step
+                
             self.logger.info(f"Successfully extracted branch '{branch_name}' to '{repo_name}'")
     
     def split_repositories(self):
@@ -723,29 +789,34 @@ class RepoSplitter:
                     self.logger.info("Analysis complete. Use --dry-run to see what would be created.")
                     return
 
-                # Process projects
-                for project_name, project in projects.items():
-                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project.name))
-                    description = f"{project.type.title()} application extracted from monorepo"
-                    self.logger.info(f"Processing project: {project.name}")
-                    repo_url = self.create_github_repo(repo_name, description)
-                    if repo_url:
-                        self.extract_project_to_repo(project, repo_name, repo_url)
-                        self.logger.info(f"Repository URL: {repo_url}")
-                    else:
-                        self.logger.error(f"Failed to create repository for project: {project.name}")
+                # Process projects with progress bar
+                total_items = len(projects) + len(common_components)
+                with tqdm(total=total_items, desc="🚀 Creating repositories", unit="repo") as pbar:
+                    # Process projects
+                    for project_name, project in projects.items():
+                        repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project.name))
+                        description = f"{project.type.title()} application extracted from monorepo"
+                        self.logger.info(f"Processing project: {project.name}")
+                        repo_url = self.create_github_repo(repo_name, description)
+                        if repo_url:
+                            self.extract_project_to_repo(project, repo_name, repo_url)
+                            self.logger.info(f"Repository URL: {repo_url}")
+                        else:
+                            self.logger.error(f"Failed to create repository for project: {project.name}")
+                        pbar.update(1)
 
-                # Process common components
-                for component_name, component in common_components.items():
-                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=component.name))
-                    description = "Common library component extracted from monorepo"
-                    self.logger.info(f"Processing common component: {component.name}")
-                    repo_url = self.create_github_repo(repo_name, description)
-                    if repo_url:
-                        self.extract_common_component_to_repo(component, repo_name, repo_url)
-                        self.logger.info(f"Repository URL: {repo_url}")
-                    else:
-                        self.logger.error(f"Failed to create repository for common component: {component.name}")
+                    # Process common components
+                    for component_name, component in common_components.items():
+                        repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=component.name))
+                        description = "Common library component extracted from monorepo"
+                        self.logger.info(f"Processing common component: {component.name}")
+                        repo_url = self.create_github_repo(repo_name, description)
+                        if repo_url:
+                            self.extract_common_component_to_repo(component, repo_name, repo_url)
+                            self.logger.info(f"Repository URL: {repo_url}")
+                        else:
+                            self.logger.error(f"Failed to create repository for common component: {component.name}")
+                        pbar.update(1)
 
             elif mode == 'project':
                 # Project mode: use explicitly provided projects and optional common_path
@@ -753,34 +824,40 @@ class RepoSplitter:
                 projects_list = self.config.manual_projects or []
                 if not projects_list:
                     raise ValueError("PROJECTS (or MANUAL_PROJECTS) must be provided in project mode")
-                for project_path in projects_list:
-                    project_path = project_path.strip()
-                    if not project_path:
-                        continue
-                    project_name = os.path.basename(project_path)
-                    project = ProjectInfo(name=project_name, path=project_path, type='app')
-                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project_name))
-                    description = "Application extracted from monorepo"
-                    self.logger.info(f"Processing project: {project.name}")
-                    repo_url = self.create_github_repo(repo_name, description)
-                    if repo_url:
-                        self.extract_project_to_repo(project, repo_name, repo_url)
-                        self.logger.info(f"Repository URL: {repo_url}")
-                    else:
-                        self.logger.error(f"Failed to create repository for project: {project.name}")
-                # Common path
-                if self.config.common_path:
-                    comp_name = os.path.basename(self.config.common_path)
-                    component = CommonComponent(name=comp_name, path=self.config.common_path)
-                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=comp_name))
-                    description = "Common library component extracted from monorepo"
-                    self.logger.info(f"Processing common component: {component.name}")
-                    repo_url = self.create_github_repo(repo_name, description)
-                    if repo_url:
-                        self.extract_common_component_to_repo(component, repo_name, repo_url)
-                        self.logger.info(f"Repository URL: {repo_url}")
-                    else:
-                        self.logger.error(f"Failed to create repository for common component: {component.name}")
+                
+                total_items = len(projects_list) + (1 if self.config.common_path else 0)
+                with tqdm(total=total_items, desc="🚀 Creating project repositories", unit="repo") as pbar:
+                    for project_path in projects_list:
+                        project_path = project_path.strip()
+                        if not project_path:
+                            continue
+                        project_name = os.path.basename(project_path)
+                        project = ProjectInfo(name=project_name, path=project_path, type='app')
+                        repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project_name))
+                        description = "Application extracted from monorepo"
+                        self.logger.info(f"Processing project: {project.name}")
+                        repo_url = self.create_github_repo(repo_name, description)
+                        if repo_url:
+                            self.extract_project_to_repo(project, repo_name, repo_url)
+                            self.logger.info(f"Repository URL: {repo_url}")
+                        else:
+                            self.logger.error(f"Failed to create repository for project: {project.name}")
+                        pbar.update(1)
+                    
+                    # Common path
+                    if self.config.common_path:
+                        comp_name = os.path.basename(self.config.common_path)
+                        component = CommonComponent(name=comp_name, path=self.config.common_path)
+                        repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=comp_name))
+                        description = "Common library component extracted from monorepo"
+                        self.logger.info(f"Processing common component: {component.name}")
+                        repo_url = self.create_github_repo(repo_name, description)
+                        if repo_url:
+                            self.extract_common_component_to_repo(component, repo_name, repo_url)
+                            self.logger.info(f"Repository URL: {repo_url}")
+                        else:
+                            self.logger.error(f"Failed to create repository for common component: {component.name}")
+                        pbar.update(1)
 
             elif mode == 'branch':
                 # Branch mode: each branch to a repo
@@ -788,19 +865,22 @@ class RepoSplitter:
                 branches = self.config.branches or []
                 if not branches:
                     raise ValueError("BRANCHES must be provided in branch mode")
-                for branch_name in branches:
-                    name_clean = branch_name.strip()
-                    if not name_clean:
-                        continue
-                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=name_clean))
-                    description = f"Repository extracted from branch {name_clean}"
-                    self.logger.info(f"Processing branch: {name_clean}")
-                    repo_url = self.create_github_repo(repo_name, description)
-                    if repo_url:
-                        self.extract_branch_to_repo(name_clean, repo_name, repo_url)
-                        self.logger.info(f"Repository URL: {repo_url}")
-                    else:
-                        self.logger.error(f"Failed to create repository for branch: {name_clean}")
+                
+                with tqdm(total=len(branches), desc="🌿 Creating branch repositories", unit="branch") as pbar:
+                    for branch_name in branches:
+                        name_clean = branch_name.strip()
+                        if not name_clean:
+                            continue
+                        repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=name_clean))
+                        description = f"Repository extracted from branch {name_clean}"
+                        self.logger.info(f"Processing branch: {name_clean}")
+                        repo_url = self.create_github_repo(repo_name, description)
+                        if repo_url:
+                            self.extract_branch_to_repo(name_clean, repo_name, repo_url)
+                            self.logger.info(f"Repository URL: {repo_url}")
+                        else:
+                            self.logger.error(f"Failed to create repository for branch: {name_clean}")
+                        pbar.update(1)
 
             # Summary
             self.logger.info("=" * 60)
