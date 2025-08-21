@@ -19,11 +19,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract version
+      - name: Extract version and owner
         id: vars
         run: |
           TAG=${GITHUB_REF_NAME}
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "owner=${OWNER}" >> $GITHUB_OUTPUT
       
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -42,10 +44,10 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/monoagent:${{ steps.vars.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/monoagent:latest
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache,mode=max
+            ghcr.io/${{ steps.vars.outputs.owner }}/monoagent:${{ steps.vars.outputs.tag }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/monoagent:latest
+          cache-from: type=registry,ref=ghcr.io/${{ steps.vars.outputs.owner }}/monoagent:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ steps.vars.outputs.owner }}/monoagent:buildcache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
