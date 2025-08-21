@@ -1,3 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment files
+.env
+.env.*
+*.env
+!env.example
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+repo_splitter.log
+
+# Generated reports
+monorepo_analysis.json
+
+# Editors/IDEs
+.idea/
+.vscode/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+
+# Misc
+*.orig
+Thumbs.db
 # Environment variables
 .env
 .env.local
