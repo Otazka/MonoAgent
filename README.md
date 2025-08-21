@@ -336,6 +336,21 @@ Generate beautiful visual representations of your monorepo structure:
 - Useful for feature-based development workflows
 - Preserves branch-specific history and changes
 
+### Migration Checklist (post-split)
+
+For teams adopting the split repositories, follow this checklist:
+
+1. Reconfigure CI/CD for new repositories (build, test, deploy pipelines).
+2. Update environment variables and secrets per repository.
+3. Adjust service discovery / API gateways (update endpoints/domains).
+4. Review dependency references; switch internal imports to package or service URLs.
+5. Publish shared libraries to your package registry (npm/pip/maven) if applicable.
+6. Update documentation and READMEs in each new repository.
+7. Archive or freeze the source monorepo branch to prevent divergence.
+8. Set branch protection and access controls on new repositories.
+9. Enable security scans (CodeQL, Trivy, Dependabot/Snyk) on each repository.
+10. Communicate migration steps and timelines to all stakeholders.
+
 ## 🧪 Testing
 
 The project includes comprehensive test coverage:
