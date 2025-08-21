@@ -147,7 +147,8 @@ class TestDependencyGraphVisualizer:
         assert output_path == "test_graph.png"
         mock_savefig.assert_called_once()
         # plt.close() might be called multiple times due to matplotlib cleanup
-        assert mock_close.call_count >= 1
+        # Just verify that close was called (matplotlib may call it internally)
+        assert mock_close.called
 
     def test_generate_dot_file(self):
         """Test DOT file generation."""
