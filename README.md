@@ -1,41 +1,96 @@
-# GitHub Monorepo Splitter AI Agent
+# Advanced GitHub Monorepo Splitter AI Agent
 
-A Python-based AI agent that automatically splits a GitHub monorepo into multiple repositories, preserving git history for each project and common libraries.
+A Python-based AI agent that intelligently analyzes and splits GitHub monorepos into multiple repositories, handling complex scenarios:
+
+- **Different apps on the same branch** → Separate into different repos
+- **Common/generic components** → Separate into shared library repos  
+- **Different apps on separate branches** → Each app gets its own repo
+- **Intelligent project structure detection** and analysis
+- **AI-powered dependency analysis** and recommendations
 
 ## Features
 
-- **Dual Mode Support**: 
-  - **Branch Mode**: Extract different branches into separate repositories
-  - **Project Mode**: Extract different projects from the same branch into separate repositories
-- **Automatic Repository Creation**: Creates new GitHub repositories via API
-- **History Preservation**: Maintains complete git history for each extracted project
-- **Common Libraries**: Extracts shared code into a separate `common-libs` repository
-- **AI-Powered Analysis**: Optional analysis to identify common files across projects
-- **Dry Run Mode**: Test the process without making actual changes
-- **Comprehensive Logging**: Detailed logs for debugging and monitoring
+- **🤖 AI-Powered Analysis**: Automatically detects projects, apps, and common components
+- **📁 Intelligent Project Detection**: Recognizes Node.js, Python, Java, Go, Rust, and more
+- **🔧 Common Component Extraction**: Identifies and extracts shared libraries and utilities
+- **🌿 Multi-Branch Support**: Handles different apps on separate branches
+- **📊 Dependency Analysis**: Analyzes relationships between projects and components
+- **📋 Comprehensive Reports**: Generates detailed analysis reports with recommendations
+- **🔒 History Preservation**: Maintains complete git history for all extracted repositories
+- **🧪 Dry Run Mode**: Test the process without making actual changes
+- **📝 Detailed Logging**: Comprehensive logs for debugging and monitoring
 
 ## Use Cases
 
-### Branch Mode (Original)
-For monorepos where different applications are on different branches:
+### 🎯 Complex Monorepo Scenarios
+
+The AI agent handles various monorepo structures automatically:
+
+#### **Scenario 1: Multiple Apps on Same Branch**
 ```
 monorepo/
-├── frontend/ (on frontend branch)
-├── backend/  (on backend branch)
-├── mobile/   (on mobile branch)
-└── shared/   (common libraries)
+├── apps/
+│   ├── frontend/     (React app)
+│   ├── backend/      (Node.js API)
+│   └── mobile/       (React Native)
+├── shared/
+│   ├── components/   (shared UI components)
+│   └── utils/        (common utilities)
+└── docs/
 ```
 
-### Project Mode (New)
-For monorepos where different projects are on the same main branch with shared libraries:
+**Result**: 5 separate repositories
+- `frontend-app`
+- `backend-app` 
+- `mobile-app`
+- `components-lib`
+- `utils-lib`
+
+#### **Scenario 2: Different Apps on Different Branches**
 ```
 monorepo/
-├── fractol/     (project 1)
-├── printf/      (project 2)
-├── pushswap/    (project 3)
-├── libft/       (shared library)
-└── other-files/
+├── main/             (main branch)
+│   ├── web-app/
+│   └── shared-libs/
+├── mobile/           (mobile branch)
+│   └── mobile-app/
+└── api/              (api branch)
+    └── backend-api/
 ```
+
+**Result**: 4 separate repositories
+- `web-app` (from main branch)
+- `shared-libs` (from main branch)
+- `mobile-app` (from mobile branch)
+- `backend-api` (from api branch)
+
+#### **Scenario 3: Mixed Structure with Common Components**
+```
+monorepo/
+├── services/
+│   ├── auth-service/
+│   ├── user-service/
+│   └── payment-service/
+├── frontend/
+│   ├── admin-panel/
+│   └── customer-portal/
+├── common/
+│   ├── database/
+│   ├── logging/
+│   └── auth/
+└── infrastructure/
+```
+
+**Result**: 9 separate repositories
+- `auth-service-app`
+- `user-service-app`
+- `payment-service-app`
+- `admin-panel-app`
+- `customer-portal-app`
+- `database-lib`
+- `logging-lib`
+- `auth-lib`
+- `infrastructure-app`
 
 ## Requirements
 
@@ -94,65 +149,42 @@ The `.env` file is already created. Edit it with your configuration values:
 ### Required Variables
 
 - `SOURCE_REPO_URL`: SSH or HTTPS URL of the monorepo to split
-- `MODE`: Either `branch` or `project` (default: `branch`)
 - `ORG`: GitHub organization or username to host the new repositories
 - `GITHUB_TOKEN`: GitHub Personal Access Token with repo scope
 
-### Mode-Specific Variables
+### AI Agent Configuration
 
-#### Branch Mode
-- `BRANCHES`: Comma-separated list of branch names (each becomes a separate app)
-
-#### Project Mode
-- `PROJECTS`: Comma-separated list of project directory names (each becomes a separate app)
+- `AUTO_DETECT`: Set to `true` to enable automatic project detection (recommended)
+- `MANUAL_PROJECTS`: Comma-separated list of project paths (only if `AUTO_DETECT=false`)
+- `MANUAL_COMMON_PATHS`: Comma-separated list of common component paths (only if `AUTO_DETECT=false`)
+- `EXCLUDE_PATTERNS`: Comma-separated list of patterns to exclude from analysis
 
 ### Optional Variables
 
-- `COMMON_PATH`: Path to common libraries folder (extracted to `common-libs` repo)
-- `OPENAI_API_KEY`: OpenAI API key for AI-powered common file analysis
+- `OPENAI_API_KEY`: OpenAI API key for enhanced AI analysis
 
-### Example Configurations
+### Example Configuration
 
-#### Branch Mode Configuration
 ```env
 # Monorepo to split (SSH or HTTPS URL)
 SOURCE_REPO_URL=git@github.com:mycompany/monorepo.git
-
-# Mode: branch-based splitting
-MODE=branch
-
-# Comma-separated list of branch names (apps)
-BRANCHES=frontend,backend,mobile,admin,api
-
-# Path for common libraries inside the repo (optional)
-COMMON_PATH=shared/
 
 # GitHub organization or username to create new repos under
 ORG=mycompany
 
 # GitHub Personal Access Token with repo scope
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
 
-#### Project Mode Configuration
-```env
-# Monorepo to split (SSH or HTTPS URL)
-SOURCE_REPO_URL=git@github.com:mycompany/monorepo.git
+# AI Agent Configuration
+AUTO_DETECT=true
 
-# Mode: project-based splitting
-MODE=project
+# Optional: Manual configuration (only if AUTO_DETECT=false)
+# MANUAL_PROJECTS=app1,app2,services/api,frontend/web
+# MANUAL_COMMON_PATHS=common,shared,libs
+# EXCLUDE_PATTERNS=node_modules,.git,dist,build
 
-# Comma-separated list of project directories
-PROJECTS=fractol,printf,pushswap
-
-# Path for common libraries inside the repo (optional)
-COMMON_PATH=libft
-
-# GitHub organization or username to create new repos under
-ORG=mycompany
-
-# GitHub Personal Access Token with repo scope
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Optional: OpenAI API Key for enhanced AI analysis
+# OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Usage
@@ -164,22 +196,19 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    python test_config.py
    ```
 
-2. **Dry Run (Test Mode)**:
+2. **Analyze only (see what would be created)**:
    ```bash
-   # For branch mode
-   python split_repo_agent.py --dry-run --mode branch
-   
-   # For project mode
-   python split_repo_agent.py --dry-run --mode project
+   python split_repo_agent.py --analyze-only
    ```
 
-3. **Actual Execution**:
+3. **Dry Run (Test Mode)**:
    ```bash
-   # For branch mode
-   python split_repo_agent.py --mode branch
-   
-   # For project mode
-   python split_repo_agent.py --mode project
+   python split_repo_agent.py --dry-run
+   ```
+
+4. **Actual Execution**:
+   ```bash
+   python split_repo_agent.py
    ```
 
 ### Programmatic Usage
@@ -189,26 +218,13 @@ You can also use the agent programmatically:
 ```python
 from split_repo_agent import RepoSplitter, RepoSplitterConfig
 
-# Branch mode example
 config = RepoSplitterConfig(
     source_repo_url="git@github.com:org/monorepo.git",
-    mode="branch",
-    branches=["app1", "app2", "app3"],
-    common_path="shared/",
     org="my-org",
     github_token="ghp_xxx",
-    dry_run=False
-)
-
-# Project mode example
-config = RepoSplitterConfig(
-    source_repo_url="git@github.com:org/monorepo.git",
-    mode="project",
-    projects=["fractol", "printf", "pushswap"],
-    common_path="libft",
-    org="my-org",
-    github_token="ghp_xxx",
-    dry_run=False
+    dry_run=False,
+    analyze_only=False,
+    auto_detect=True
 )
 
 with RepoSplitter(config) as splitter:
@@ -217,57 +233,94 @@ with RepoSplitter(config) as splitter:
 
 ### Example Output
 
-#### Branch Mode Output
+#### Analysis Output
 ```
-2024-01-15 10:30:00 - INFO - Configuration loaded: mode=branch, org: mycompany
-2024-01-15 10:30:01 - INFO - Cloning source repository: git@github.com:mycompany/monorepo.git
-2024-01-15 10:30:05 - INFO - Analyzing for common files...
-2024-01-15 10:30:06 - INFO - Found 15 common files across all branches
-2024-01-15 10:30:07 - INFO - Processing branch: frontend
-2024-01-15 10:30:08 - INFO - Created repository: frontend-app
-2024-01-15 10:30:12 - INFO - Successfully extracted branch 'frontend' to 'frontend-app'
-2024-01-15 10:30:12 - INFO - Repository URL: https://github.com/mycompany/frontend-app.git
+2024-01-15 10:30:00 - INFO - 🤖 Starting AI-powered monorepo analysis...
+2024-01-15 10:30:01 - INFO - 🔍 Starting AI-powered monorepo analysis...
+2024-01-15 10:30:02 - INFO - 📁 Detecting projects and applications...
+2024-01-15 10:30:03 - INFO -   ✅ Detected nodejs project: frontend at apps/frontend
+2024-01-15 10:30:03 - INFO -   ✅ Detected nodejs project: backend at apps/backend
+2024-01-15 10:30:04 - INFO - 🔧 Detecting common components and shared libraries...
+2024-01-15 10:30:04 - INFO -   ✅ Detected common component: utils at shared/utils
+2024-01-15 10:30:05 - INFO - 🔗 Analyzing dependencies between projects...
+2024-01-15 10:30:06 - INFO - 📊 Generating analysis report...
+2024-01-15 10:30:06 - INFO - 📄 Analysis report saved to: monorepo_analysis.json
+2024-01-15 10:30:06 - INFO - ============================================================
+2024-01-15 10:30:06 - INFO - 📋 MONOREPO ANALYSIS SUMMARY
+2024-01-15 10:30:06 - INFO - ============================================================
+2024-01-15 10:30:06 - INFO - 🔍 Detected 2 projects:
+2024-01-15 10:30:06 - INFO -   • frontend (nodejs) at apps/frontend
+2024-01-15 10:30:06 - INFO -   • backend (nodejs) at apps/backend
+2024-01-15 10:30:06 - INFO - 🔧 Detected 1 common components:
+2024-01-15 10:30:06 - INFO -   • utils at shared/utils
+2024-01-15 10:30:06 - INFO - 💡 Recommendations:
+2024-01-15 10:30:06 - INFO -   • Split 2 detected projects into separate repositories
+2024-01-15 10:30:06 - INFO -   • Extract 1 common components into shared libraries
 ```
 
-#### Project Mode Output
+#### Splitting Output
 ```
-2024-01-15 10:30:00 - INFO - Configuration loaded: mode=project, org: mycompany
-2024-01-15 10:30:01 - INFO - Cloning source repository: git@github.com:mycompany/monorepo.git
-2024-01-15 10:30:05 - INFO - Analyzing for common files...
-2024-01-15 10:30:06 - INFO - Found 5 common files across all projects
-2024-01-15 10:30:07 - INFO - Processing project: fractol
-2024-01-15 10:30:08 - INFO - Created repository: fractol-app
-2024-01-15 10:30:12 - INFO - Successfully extracted project 'fractol' to 'fractol-app'
-2024-01-15 10:30:12 - INFO - Repository URL: https://github.com/mycompany/fractol-app.git
+2024-01-15 10:35:00 - INFO - Processing project: frontend
+2024-01-15 10:35:01 - INFO - Created repository: frontend-app
+2024-01-15 10:35:05 - INFO - Successfully extracted project 'frontend' to 'frontend-app'
+2024-01-15 10:35:05 - INFO - Repository URL: https://github.com/mycompany/frontend-app.git
+2024-01-15 10:35:06 - INFO - Processing project: backend
+2024-01-15 10:35:07 - INFO - Created repository: backend-app
+2024-01-15 10:35:11 - INFO - Successfully extracted project 'backend' to 'backend-app'
+2024-01-15 10:35:11 - INFO - Repository URL: https://github.com/mycompany/backend-app.git
+2024-01-15 10:35:12 - INFO - Processing common component: utils
+2024-01-15 10:35:13 - INFO - Created repository: utils-lib
+2024-01-15 10:35:17 - INFO - Successfully extracted common component 'utils' to 'utils-lib'
+2024-01-15 10:35:17 - INFO - Repository URL: https://github.com/mycompany/utils-lib.git
+2024-01-15 10:35:18 - INFO - ============================================================
+2024-01-15 10:35:18 - INFO - 🎉 REPOSITORY SPLITTING COMPLETED
+2024-01-15 10:35:18 - INFO - ============================================================
+2024-01-15 10:35:18 - INFO - Created 3 repositories:
+2024-01-15 10:35:18 - INFO -   - frontend-app
+2024-01-15 10:35:18 - INFO -   - backend-app
+2024-01-15 10:35:18 - INFO -   - utils-lib
 ```
 
 ## How It Works
 
-### 1. Repository Cloning
-- Clones the source monorepo as a mirror to preserve all history
-- Uses temporary directories for processing
+### 1. 🤖 AI-Powered Analysis
+- **Project Detection**: Automatically identifies projects based on configuration files (package.json, requirements.txt, etc.)
+- **Directory Structure Analysis**: Recognizes common patterns like `apps/`, `services/`, `frontend/`, `backend/`
+- **Common Component Detection**: Identifies shared libraries, utilities, and components
+- **Dependency Analysis**: Analyzes relationships between projects and components
 
-### 2. Branch Mode Extraction
-For each branch in the `BRANCHES` configuration:
+### 2. 📁 Intelligent Project Recognition
+The AI agent recognizes various project types:
+- **Node.js**: package.json, next.config.js, vue.config.js, etc.
+- **Python**: requirements.txt, setup.py, pyproject.toml
+- **Java**: pom.xml, build.gradle
+- **Go**: go.mod, go.sum
+- **Rust**: Cargo.toml
+- **PHP**: composer.json
+- **Ruby**: Gemfile
+- **Docker**: Dockerfile, docker-compose.yml
+- **And more...**
+
+### 3. 🔧 Repository Extraction
+For each detected project:
 - Creates a new GitHub repository via API
-- Extracts only that branch's history
-- Renames the branch to `main`
-- Pushes the complete history to the new repository
+- Uses `git filter-repo` to extract only the project's files
+- Preserves complete git history for the extracted files
+- Pushes to the new repository with `main` branch
 
-### 3. Project Mode Extraction
-For each project in the `PROJECTS` configuration:
-- Creates a new GitHub repository via API
-- Uses `git filter-repo` to extract only files from the specified project directory
-- Preserves history for the extracted files
-- Pushes the complete history to the new repository
+### 4. 📦 Common Component Extraction
+For detected shared components:
+- Creates separate library repositories
+- Extracts common utilities, components, and shared code
+- Maintains version history and dependencies
+- Enables reuse across multiple projects
 
-### 4. Common Libraries Extraction
-If `COMMON_PATH` is specified:
-- Uses `git filter-repo` to extract only files from the specified path
-- Creates a `common-libs` repository
-- Preserves history for the extracted files
-
-### 5. AI Analysis (Optional)
+### 5. 📊 Analysis Reports
+Generates comprehensive reports including:
+- Detected projects and their types
+- Common components and their usage
+- Dependency relationships
+- Recommendations for splitting strategy
 - Analyzes file trees across all branches/projects
 - Identifies common files that might be candidates for shared libraries
 - Provides suggestions for what could be moved to `COMMON_PATH`
