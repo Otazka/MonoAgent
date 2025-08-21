@@ -2,20 +2,43 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+We are committed to providing security updates for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 1.0.x   | :white_check_mark: |
+| < 1.0   | :x:                |
+
+## Security Features
+
+- **Non-root Docker container**: Runs as dedicated `monoagent` user
+- **Automated security scanning**: Trivy vulnerability scanning in CI/CD
+- **CodeQL analysis**: Static code analysis for security vulnerabilities
+- **Dependency scanning**: Regular updates and vulnerability checks
+- **Token redaction**: Sensitive tokens are redacted in logs
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+If you discover a security vulnerability in MonoAgent, please report it to us:
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+1. **DO NOT** create a public GitHub issue
+2. **DO** email us at: [security@yourdomain.com] (replace with your actual security contact)
+3. **Include** detailed information about the vulnerability
+4. **Provide** steps to reproduce the issue
+
+### What to expect:
+
+- **Response time**: We aim to respond within 48 hours
+- **Updates**: You'll receive regular updates on the status
+- **Credit**: Security researchers will be credited in our security advisories
+- **Disclosure**: We follow responsible disclosure practices
+
+## Security Best Practices
+
+When using MonoAgent:
+
+1. **Use latest version**: Always use the most recent stable release
+2. **Secure tokens**: Store GitHub/GitLab tokens securely
+3. **Review permissions**: Use minimal required permissions for tokens
+4. **Monitor logs**: Check logs for any suspicious activity
+5. **Update dependencies**: Keep your Python environment updated
