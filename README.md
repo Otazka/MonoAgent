@@ -65,6 +65,16 @@ pip install -r requirements.txt
 python split_repo_agent.py --analyze-only --dry-run
 ```
 
+Run preflight checks (recommended):
+
+```bash
+python split_repo_agent.py --preflight
+# Sample output
+# ✅ Preflight checks passed
+# or
+# ❌ Preflight checks failed. See messages above.
+```
+
 5) Split (auto mode, to GitHub)
 ```bash
 python split_repo_agent.py --mode auto

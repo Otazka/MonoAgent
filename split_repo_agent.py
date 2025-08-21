@@ -1279,6 +1279,20 @@ class RepoSplitter:
             ]
         )
         self.logger = logging.getLogger(__name__)
+
+    # -------------------------------
+    # Standardized issue logging API
+    # -------------------------------
+    def _log_issue(self, level: str, component: str, context: str, message: str, cause: str, fix: str) -> None:
+        """Standardized log format: [LEVEL][component][context] message | cause: ... | fix: ..."""
+        prefix = level.upper()
+        line = f"[{prefix}][{component}][{context}] {message} | cause: {cause} | fix: {fix}"
+        if level.lower() == 'error':
+            self.logger.error(line)
+        elif level.lower() == 'warning':
+            self.logger.warning(line)
+        else:
+            self.logger.info(line)
     
     def __enter__(self):
         """Context manager entry."""
@@ -1532,8 +1546,14 @@ class RepoSplitter:
             )
             return result
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Git command failed: {' '.join(command)}")
-            self.logger.error(f"Error: {e.stderr}")
+            self._log_issue(
+                'error',
+                'git',
+                'run_git_command',
+                f"Command failed: {' '.join(command)}",
+                cause=e.stderr.strip() if e.stderr else 'unknown',
+                fix='Check command syntax and repo state; run with --analyze-only first.'
+            )
             raise
 
     # -----------------------
@@ -1707,7 +1727,7 @@ class RepoSplitter:
         try:
             import requests
         except Exception:
-            self.logger.error("Requests library not available for GitLab operations")
+            self._log_issue('error','gitlab','create_repo','Requests not available','requests module not installed','Install requests or use GitHub provider')
             return None
         base = (self.config.gitlab_host or 'https://gitlab.com').rstrip('/')
         token = self.config.github_token  # reuse token env for simplicity
@@ -1734,9 +1754,9 @@ class RepoSplitter:
                 self.logger.warning("GitLab project already exists; continuing")
                 return f"{base}/{self.config.org}/{data['path']}.git"
             else:
-                self.logger.error(f"GitLab API error {resp.status_code}: {resp.text}")
+                self._log_issue('error','gitlab','create_repo',f"API error {resp.status_code}",resp.text[:200],'Verify token and permissions; ensure project path unique')
         except Exception as e:
-            self.logger.error(f"GitLab project creation failed: {e}")
+            self._log_issue('error','gitlab','create_repo','Project creation failed',str(e),'Check network and GITLAB_HOST; retry later')
         return None
 
     # -----------------
@@ -1747,7 +1767,7 @@ class RepoSplitter:
         try:
             import requests
         except Exception:
-            self.logger.error("Requests library not available for Bitbucket operations")
+            self._log_issue('error','bitbucket','create_repo','Requests not available','requests module not installed','Install requests or use GitHub provider')
             return None
         base = "https://api.bitbucket.org/2.0"
         user = self.config.provider_username or self.config.org
@@ -1779,9 +1799,9 @@ class RepoSplitter:
                 self.logger.warning("Bitbucket repo already exists; continuing")
                 return f"git@bitbucket.org:{user}/{name}.git"
             else:
-                self.logger.error(f"Bitbucket API error {resp.status_code}: {resp.text}")
+                self._log_issue('error','bitbucket','create_repo',f"API error {resp.status_code}",resp.text[:200],'Verify app password, username, and workspace')
         except Exception as e:
-            self.logger.error(f"Bitbucket repo creation failed: {e}")
+            self._log_issue('error','bitbucket','create_repo','Repo creation failed',str(e),'Check network, auth, and repository name')
         return None
 
     # -----------------
@@ -1799,12 +1819,12 @@ class RepoSplitter:
             import requests
             import base64
         except Exception:
-            self.logger.error("Requests library not available for Azure operations")
+            self._log_issue('error','azure','create_repo','Requests not available','requests module not installed','Install requests or use GitHub provider')
             return None
         org = self.config.org
         project = self.config.azure_project
         if not project:
-            self.logger.error("azure_project is required for Azure DevOps provider")
+            self._log_issue('error','azure','create_repo','azure_project missing','config.azure_project not set','Set AZURE_PROJECT in env or CLI')
             return None
         user = self.config.provider_username or ""
         pat = self.config.github_token
@@ -1833,9 +1853,9 @@ class RepoSplitter:
                 self.logger.warning("Azure repo already exists; continuing")
                 return f"https://dev.azure.com/{org}/{project}/_git/{name}"
             else:
-                self.logger.error(f"Azure API error {resp.status_code}: {resp.text}")
+                self._log_issue('error','azure','create_repo',f"API error {resp.status_code}",resp.text[:200],'Verify PAT permissions and org/project names')
         except Exception as e:
-            self.logger.error(f"Azure DevOps repo creation failed: {e}")
+            self._log_issue('error','azure','create_repo','Repo creation failed',str(e),'Check network and PAT; retry later')
         return None
     
     def extract_project_to_repo(self, project: ProjectInfo, repo_name: str, repo_url: str):
