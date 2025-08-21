@@ -7,11 +7,11 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="github-monorepo-splitter",
+    name="monoagent",
     version="1.0.0",
     author="Elena Surovtseva",
     author_email="your.email@example.com",
-    description="AI-powered GitHub monorepo splitter with intelligent project detection",
+    description="AI-powered monorepo splitter with intelligent project detection and multi-provider support",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Otazka/MonoAgent",
@@ -21,7 +21,6 @@ setup(
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
@@ -35,14 +34,14 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "monorepo-splitter=split_repo_agent:main",
+            "monoagent=split_repo_agent:main",
         ],
     },
     include_package_data=True,
     package_data={
         "": ["*.md", "*.txt", "*.yml", "*.yaml"],
     },
-    keywords="monorepo, git, github, repository, split, ai, automation",
+    keywords="monorepo, git, github, gitlab, bitbucket, azure, repository, split, ai, automation",
     project_urls={
         "Bug Reports": "https://github.com/Otazka/MonoAgent/issues",
         "Source": "https://github.com/Otazka/MonoAgent",

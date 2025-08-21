@@ -3,22 +3,21 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "github-monorepo-splitter"
+name = "monoagent"
 dynamic = ["version"]
-description = "AI-powered GitHub monorepo splitter with intelligent project detection"
+description = "AI-powered monorepo splitter with intelligent project detection and multi-provider support"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Elena Surovtseva", email = "your.email@example.com"}
 ]
 maintainers = [
     {name = "Elena Surovtseva", email = "your.email@example.com"}
 ]
-keywords = ["monorepo", "git", "github", "repository", "split", "ai", "automation"]
+keywords = ["monorepo", "git", "github", "gitlab", "bitbucket", "azure", "repository", "split", "ai", "automation"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -33,6 +32,10 @@ dependencies = [
     "PyGithub>=2.1.1",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
+    "tqdm>=4.64.0",
+    "networkx>=3.0",
+    "matplotlib>=3.5.0",
+    "graphviz>=0.20.0",
 ]
 
 [project.optional-dependencies]
@@ -48,13 +51,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/github-monorepo-splitter"
-Documentation = "https://github.com/yourusername/github-monorepo-splitter#readme"
-Repository = "https://github.com/yourusername/github-monorepo-splitter"
-"Bug Tracker" = "https://github.com/yourusername/github-monorepo-splitter/issues"
+Homepage = "https://github.com/Otazka/MonoAgent"
+Documentation = "https://github.com/Otazka/MonoAgent#readme"
+Repository = "https://github.com/Otazka/MonoAgent"
+"Bug Tracker" = "https://github.com/Otazka/MonoAgent/issues"
 
 [project.scripts]
-monorepo-splitter = "split_repo_agent:main"
+monoagent = "split_repo_agent:main"
 
 [tool.setuptools_scm]
 write_to = "split_repo_agent/_version.py"

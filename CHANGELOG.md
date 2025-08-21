@@ -23,4 +23,4 @@ All notable changes to this project will be documented in this file.
 - Provider-specific env templates and Docker usage.
 - Badges and improved Quick Start.
 
-[1.0.0-beta]: https://github.com/yourusername/github-monorepo-splitter/releases/tag/v1.0.0-beta
+[1.0.0-beta]: https://github.com/Otazka/MonoAgent/releases/tag/v1.0.0-beta

@@ -39,7 +39,7 @@ cd MonoAgent
 pip install -r requirements.txt
 
 # Or install with pip
-pip install github-monorepo-splitter
+pip install monoagent
 ```
 
 ### Golden Path (5 commands)
@@ -108,15 +108,15 @@ python split_repo_agent.py --mode auto
 Install globally with pipx (recommended):
 
 ```bash
-pipx install git+https://github.com/yourusername/github-monorepo-splitter.git@v1.0.0-beta
-monorepo-splitter --analyze-only --dry-run
+pipx install git+https://github.com/Otazka/MonoAgent.git@v1.0.0-beta
+monoagent --analyze-only --dry-run
 ```
 
 Or with pip into current environment:
 
 ```bash
-pip install git+https://github.com/yourusername/github-monorepo-splitter.git@v1.0.0-beta
-monorepo-splitter --mode auto
+pip install git+https://github.com/Otazka/MonoAgent.git@v1.0.0-beta
+monoagent --mode auto
 ```
 
 ### Basic Usage
@@ -146,7 +146,7 @@ You can run the tool containerized without installing Python and system dependen
 Build the image:
 
 ```bash
-docker build -t monorepo-splitter:latest .
+docker build -t monoagent:latest .
 ```
 
 Run analysis (mount SSH keys and .env if using SSH URLs):
@@ -185,7 +185,7 @@ Run the web UI via Docker:
 docker run --rm -p 8080:8080 \
   -v "$PWD/.env":/app/.env:ro \
   -v "$HOME/.ssh":/root/.ssh:ro \
-  monorepo-splitter:latest python webapp/app.py
+  monoagent:latest python webapp/app.py
 ```
 
 Notes:
@@ -495,8 +495,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - 📧 Email: your.email@example.com
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/github-monorepo-splitter/issues)
-- 📖 Documentation: [Project Wiki](https://github.com/yourusername/github-monorepo-splitter/wiki)
+- 🐛 Issues: [GitHub Issues](https://github.com/Otazka/MonoAgent/issues)
+- 📖 Documentation: [Project Wiki](https://github.com/Otazka/MonoAgent/wiki)
 
 ---
 
