@@ -32,8 +32,7 @@ USER monoagent
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python monitoring.py --health-check || exit 1
 
-# Default entrypoint runs the splitter; pass flags via `docker run ... -- <flags>` or override CMD
-ENTRYPOINT ["python", "split_repo_agent.py"]
-CMD ["--analyze-only", "--dry-run"]
+# Default command runs the splitter; can be overridden
+CMD ["python", "split_repo_agent.py", "--analyze-only", "--dry-run"]
 
 

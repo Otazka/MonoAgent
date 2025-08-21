@@ -133,21 +133,14 @@ jobs:
     
     - name: Test Docker health check
       run: |
-        # Start container in background with a long-running command
-        docker run -d --name monoagent-container monoagent-test sleep 60
+        # Test health check directly without running container in background
+        docker run --rm monoagent-test python monitoring.py --health-check
         
-        # Wait for container to be ready
-        sleep 10
+        # Test that the container can start and run basic commands
+        docker run --rm monoagent-test python -c "import split_repo_agent; print('✅ MonoAgent imports successfully')"
         
-        # Check health status using the built-in health check
-        docker inspect monoagent-container --format='{{.State.Health.Status}}'
-        
-        # Test monitoring script directly
-        docker exec monoagent-container python monitoring.py --health-check
-        
-        # Cleanup
-        docker stop monoagent-container
-        docker rm monoagent-container
+        # Test that the container can run the default command
+        docker run --rm monoagent-test --help
     
     - name: Test Docker performance
       run: |
