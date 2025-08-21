@@ -14,7 +14,7 @@ setup(
     description="AI-powered GitHub monorepo splitter with intelligent project detection",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/github-monorepo-splitter",
+    url="https://github.com/Otazka/MonoAgent",
     packages=find_packages(),
     # Ensure single-module entry point is included
     py_modules=["split_repo_agent"],
@@ -44,8 +44,8 @@ setup(
     },
     keywords="monorepo, git, github, repository, split, ai, automation",
     project_urls={
-        "Bug Reports": "https://github.com/yourusername/github-monorepo-splitter/issues",
-        "Source": "https://github.com/yourusername/github-monorepo-splitter",
-        "Documentation": "https://github.com/yourusername/github-monorepo-splitter#readme",
+        "Bug Reports": "https://github.com/Otazka/MonoAgent/issues",
+        "Source": "https://github.com/Otazka/MonoAgent",
+        "Documentation": "https://github.com/Otazka/MonoAgent#readme",
     },
 )

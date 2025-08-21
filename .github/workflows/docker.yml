@@ -41,9 +41,9 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/monorepo-splitter:${{ steps.vars.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/monorepo-splitter:latest
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monorepo-splitter:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monorepo-splitter:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/monoagent:${{ steps.vars.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/monoagent:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache,mode=max
 
 

@@ -32,8 +32,8 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 
    ```bash
 # Clone the repository
-git clone https://github.com/yourusername/github-monorepo-splitter.git
-cd github-monorepo-splitter
+git clone https://github.com/Otazka/MonoAgent.git
+cd MonoAgent
 
 # Install dependencies
 pip install -r requirements.txt
@@ -46,8 +46,8 @@ pip install github-monorepo-splitter
 
 1) Clone and enter
 ```bash
-git clone https://github.com/yourusername/github-monorepo-splitter.git
-cd github-monorepo-splitter
+git clone https://github.com/Otazka/MonoAgent.git
+cd MonoAgent
 ```
 
 2) Create environment
@@ -156,7 +156,7 @@ docker run --rm \
   -v "$PWD/.env":/app/.env:ro \
   -v "$HOME/.ssh":/root/.ssh:ro \
   -e GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
-  ghcr.io/yourusername/monorepo-splitter:latest --analyze-only --dry-run
+  ghcr.io/otazka/monoagent:latest --analyze-only --dry-run
 ```
 
 Example split execution to GitHub/GitLab/Bitbucket/Azure:
@@ -165,7 +165,7 @@ Example split execution to GitHub/GitLab/Bitbucket/Azure:
 docker run --rm \
   -v "$PWD/.env":/app/.env:ro \
   -v "$HOME/.ssh":/root/.ssh:ro \
-  ghcr.io/yourusername/monorepo-splitter:latest --mode auto --provider github
+  ghcr.io/otazka/monoagent:latest --mode auto --provider github
 ```
 - ### Web UI
 
