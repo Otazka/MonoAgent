@@ -61,6 +61,40 @@ python split_repo_agent.py --mode project --projects app1,app2,app3 --common-pat
 python split_repo_agent.py --mode branch --branches main,develop,feature --dry-run
 ```
 
+### Docker Usage
+
+You can run the tool containerized without installing Python and system dependencies locally.
+
+Build the image:
+
+```bash
+docker build -t monorepo-splitter:latest .
+```
+
+Run analysis (mount SSH keys and .env if using SSH URLs):
+
+```bash
+docker run --rm \
+  -v "$PWD/.env":/app/.env:ro \
+  -v "$HOME/.ssh":/root/.ssh:ro \
+  -e GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
+  monorepo-splitter:latest --analyze-only --dry-run
+```
+
+Example split execution to GitHub/GitLab/Bitbucket/Azure:
+
+```bash
+docker run --rm \
+  -v "$PWD/.env":/app/.env:ro \
+  -v "$HOME/.ssh":/root/.ssh:ro \
+  monorepo-splitter:latest --mode auto --provider github
+```
+
+Notes:
+- For SSH clone URLs, mount `~/.ssh`. For HTTPS PATs, ensure `.env` contains the token variables.
+- Graphviz is installed in the image for `--visualize` support.
+- `git-filter-repo` is installed in the image.
+
 ## 📋 Configuration
 
 ### Environment Variables (.env)
