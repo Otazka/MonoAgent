@@ -1844,8 +1844,8 @@ class RepoSplitter:
             resp = requests.post(url, headers=headers, json=payload, timeout=30)
             if resp.status_code in (200, 201):
                 info = resp.json()
-                clone_url = next((l['href'] for l in info.get('remoteUrl', []) if l.get('name') == 'ssh'), None)
-                clone_url = clone_url or info.get('sshUrl') or info.get('remoteUrl')
+                # Azure returns sshUrl and remoteUrl as strings
+                clone_url = info.get('sshUrl') or info.get('remoteUrl')
                 self.logger.info(f"Created Azure DevOps repo: {name}")
                 self.created_repos.append(name)
                 return clone_url
