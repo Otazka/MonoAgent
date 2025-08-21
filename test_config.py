@@ -87,7 +87,21 @@ def check_env_file():
     # Load and validate environment variables
     load_dotenv()
     
-    required_vars = ['SOURCE_REPO_URL', 'BRANCHES', 'ORG', 'GITHUB_TOKEN']
+    # Check mode
+    mode = os.getenv('MODE', 'branch').lower()
+    print(f"✅ MODE: {mode}")
+    
+    required_vars = ['SOURCE_REPO_URL', 'ORG', 'GITHUB_TOKEN']
+    
+    # Add mode-specific required variables
+    if mode == 'branch':
+        required_vars.append('BRANCHES')
+    elif mode == 'project':
+        required_vars.append('PROJECTS')
+    else:
+        print(f"❌ Invalid MODE: {mode}. Must be 'branch' or 'project'")
+        return False
+    
     missing_vars = []
     
     for var in required_vars:
@@ -100,6 +114,30 @@ def check_env_file():
     if missing_vars:
         print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
         return False
+    
+    # Validate mode-specific variables
+    if mode == 'branch':
+        branches = os.getenv('BRANCHES', '').split(',')
+        branches = [branch.strip() for branch in branches if branch.strip()]
+        if not branches:
+            print("❌ BRANCHES is empty or contains no valid branch names")
+            return False
+        print(f"✅ Found {len(branches)} branches: {', '.join(branches)}")
+    
+    elif mode == 'project':
+        projects = os.getenv('PROJECTS', '').split(',')
+        projects = [project.strip() for project in projects if project.strip()]
+        if not projects:
+            print("❌ PROJECTS is empty or contains no valid project names")
+            return False
+        print(f"✅ Found {len(projects)} projects: {', '.join(projects)}")
+    
+    # Check optional variables
+    common_path = os.getenv('COMMON_PATH')
+    if common_path:
+        print(f"✅ COMMON_PATH: {common_path}")
+    else:
+        print("ℹ️  COMMON_PATH: not set (optional)")
     
     return True
 
@@ -151,6 +189,24 @@ def main():
         print("1. Review your configuration in .env")
         print("2. Run: python split_repo_agent.py --dry-run")
         print("3. If dry run looks good, run: python split_repo_agent.py")
+        
+        # Show mode-specific information
+        load_dotenv()
+        mode = os.getenv('MODE', 'branch').lower()
+        if mode == 'branch':
+            branches = os.getenv('BRANCHES', '').split(',')
+            branches = [branch.strip() for branch in branches if branch.strip()]
+            print(f"\nMode: Branch-based splitting")
+            print(f"Will create {len(branches)} repositories (one per branch)")
+        else:
+            projects = os.getenv('PROJECTS', '').split(',')
+            projects = [project.strip() for project in projects if project.strip()]
+            print(f"\nMode: Project-based splitting")
+            print(f"Will create {len(projects)} repositories (one per project)")
+        
+        common_path = os.getenv('COMMON_PATH')
+        if common_path:
+            print(f"Plus 1 common-libs repository (from {common_path})")
     else:
         print("❌ Some checks failed. Please fix the issues above before proceeding.")
         sys.exit(1)

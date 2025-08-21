@@ -3,10 +3,14 @@
 GitHub Monorepo Splitter AI Agent
 
 This agent automatically splits a GitHub monorepo into multiple repositories,
-preserving git history for each branch and common libraries.
+preserving git history for each project and common libraries.
+
+Supports two modes:
+1. Branch-based splitting (original functionality)
+2. Project-based splitting (new functionality for same-branch projects with shared libraries)
 
 Usage:
-    python split_repo_agent.py [--dry-run]
+    python split_repo_agent.py [--dry-run] [--mode branch|project]
 
 Requirements:
     - git-filter-repo installed and available in PATH
@@ -23,7 +27,7 @@ import subprocess
 import tempfile
 import shutil
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -36,10 +40,12 @@ from github import Github, GithubException
 class RepoSplitterConfig:
     """Configuration for the repository splitter."""
     source_repo_url: str
-    branches: List[str]
-    common_path: Optional[str]
-    org: str
-    github_token: str
+    mode: str  # 'branch' or 'project'
+    branches: Optional[List[str]] = None
+    projects: Optional[List[str]] = None
+    common_path: Optional[str] = None
+    org: str = ""
+    github_token: str = ""
     dry_run: bool = False
 
 
@@ -82,29 +88,54 @@ class RepoSplitter:
         """Load configuration from environment variables."""
         load_dotenv()
         
-        config = RepoSplitterConfig(
-            source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
-            branches=os.getenv('BRANCHES', '').split(','),
-            common_path=os.getenv('COMMON_PATH'),
-            org=os.getenv('ORG', ''),
-            github_token=os.getenv('GITHUB_TOKEN', ''),
-            dry_run=False
-        )
+        mode = os.getenv('MODE', 'branch').lower()
+        
+        if mode == 'branch':
+            branches = os.getenv('BRANCHES', '').split(',')
+            branches = [branch.strip() for branch in branches if branch.strip()]
+            config = RepoSplitterConfig(
+                source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
+                mode=mode,
+                branches=branches,
+                common_path=os.getenv('COMMON_PATH'),
+                org=os.getenv('ORG', ''),
+                github_token=os.getenv('GITHUB_TOKEN', ''),
+                dry_run=False
+            )
+        elif mode == 'project':
+            projects = os.getenv('PROJECTS', '').split(',')
+            projects = [project.strip() for project in projects if project.strip()]
+            config = RepoSplitterConfig(
+                source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
+                mode=mode,
+                projects=projects,
+                common_path=os.getenv('COMMON_PATH'),
+                org=os.getenv('ORG', ''),
+                github_token=os.getenv('GITHUB_TOKEN', ''),
+                dry_run=False
+            )
+        else:
+            raise ValueError("MODE must be either 'branch' or 'project'")
         
         # Validate required fields
         if not config.source_repo_url:
             raise ValueError("SOURCE_REPO_URL is required")
-        if not config.branches or config.branches == ['']:
-            raise ValueError("BRANCHES is required")
         if not config.org:
             raise ValueError("ORG is required")
         if not config.github_token:
             raise ValueError("GITHUB_TOKEN is required")
         
-        # Clean up branches list
-        config.branches = [branch.strip() for branch in config.branches if branch.strip()]
+        if mode == 'branch' and not config.branches:
+            raise ValueError("BRANCHES is required for branch mode")
+        elif mode == 'project' and not config.projects:
+            raise ValueError("PROJECTS is required for project mode")
         
-        self.logger.info(f"Configuration loaded: {len(config.branches)} branches, org: {config.org}")
+        self.logger.info(f"Configuration loaded: mode={mode}, org={config.org}")
+        if mode == 'branch':
+            self.logger.info(f"Branches: {len(config.branches)}")
+        else:
+            self.logger.info(f"Projects: {len(config.projects)}")
+        
         return config
     
     def run_git_command(self, command: List[str], cwd: str = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -206,8 +237,15 @@ class RepoSplitter:
             # Remove all other branches except the current one
             self.run_git_command(['git', 'branch', '-D', branch_name])
             
-            # Rename temp_branch to main
-            self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
+            # Check if main branch exists and handle it
+            try:
+                # Try to rename temp_branch to main
+                self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
+            except subprocess.CalledProcessError:
+                # If main already exists, delete it first
+                self.logger.info("Main branch already exists, removing it first")
+                self.run_git_command(['git', 'branch', '-D', 'main'])
+                self.run_git_command(['git', 'branch', '-m', 'temp_branch', 'main'])
             
             # Remove remote origin
             self.run_git_command(['git', 'remote', 'remove', 'origin'])
@@ -219,6 +257,55 @@ class RepoSplitter:
             self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
             
             self.logger.info(f"Successfully extracted branch '{branch_name}' to '{repo_name}'")
+    
+    def extract_project_to_repo(self, project_name: str, repo_name: str, repo_url: str):
+        """Extract a single project to a new repository using git filter-repo."""
+        project_repo_path = os.path.join(self.temp_dir, f"project_{project_name}")
+        
+        self.logger.info(f"Extracting project '{project_name}' to repository '{repo_name}'")
+        
+        if not self.config.dry_run:
+            # Clone the mirror repo
+            self.run_git_command(['git', 'clone', self.source_repo_path, project_repo_path])
+            
+            # Change to the project repo directory
+            os.chdir(project_repo_path)
+            
+            # Check if the project directory exists in the repository
+            if not os.path.exists(project_name):
+                self.logger.warning(f"Project directory '{project_name}' not found in repository")
+                return
+            
+            # Use git filter-repo to extract only the project path
+            # Move everything from project_name/ to the root
+            self.run_git_command([
+                'git', 'filter-repo',
+                '--path', f'{project_name}/',
+                '--path-rename', f'{project_name}/:',
+                '--force'
+            ])
+            
+            # Check if main branch exists after filtering
+            result = self.run_git_command(['git', 'branch', '--list', 'main'], check=False)
+            if not result.stdout.strip():
+                # No main branch, create one from the current HEAD
+                self.logger.info("No main branch found after filtering, creating one")
+                self.run_git_command(['git', 'checkout', '-b', 'main'])
+            
+            # Remove remote origin if it exists
+            try:
+                self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            except subprocess.CalledProcessError:
+                # Remote doesn't exist, which is fine
+                pass
+            
+            # Add new remote
+            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
+            
+            # Push to the new repository
+            self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
+            
+            self.logger.info(f"Successfully extracted project '{project_name}' to '{repo_name}'")
     
     def extract_common_libs(self, repo_name: str, repo_url: str):
         """Extract common libraries to a separate repository using git filter-repo."""
@@ -240,13 +327,24 @@ class RepoSplitter:
             # Use git filter-repo to extract only the common path
             self.run_git_command([
                 'git', 'filter-repo',
-                '--path', self.config.common_path,
-                '--path-rename', f'{self.config.common_path}:',
+                '--path', f'{self.config.common_path}/',
+                '--path-rename', f'{self.config.common_path}/:',
                 '--force'
             ])
             
-            # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            # Check if main branch exists after filtering
+            result = self.run_git_command(['git', 'branch', '--list', 'main'], check=False)
+            if not result.stdout.strip():
+                # No main branch, create one from the current HEAD
+                self.logger.info("No main branch found after filtering, creating one")
+                self.run_git_command(['git', 'checkout', '-b', 'main'])
+            
+            # Remove remote origin if it exists
+            try:
+                self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            except subprocess.CalledProcessError:
+                # Remote doesn't exist, which is fine
+                pass
             
             # Add new remote
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
@@ -257,33 +355,45 @@ class RepoSplitter:
             self.logger.info(f"Successfully extracted common libraries to '{repo_name}'")
     
     def analyze_common_files(self) -> Dict[str, List[str]]:
-        """Analyze branches to suggest common files (AI extension)."""
-        self.logger.info("Analyzing branches for common files...")
+        """Analyze branches/projects to suggest common files (AI extension)."""
+        self.logger.info("Analyzing for common files...")
         
         common_files = {}
         
         if not self.config.dry_run:
-            # Get all branches
-            os.chdir(self.source_repo_path)
-            result = self.run_git_command(['git', 'branch', '-r'])
-            all_branches = [line.strip() for line in result.stdout.split('\n') if line.strip()]
+            if self.config.mode == 'branch':
+                # Get all branches
+                os.chdir(self.source_repo_path)
+                result = self.run_git_command(['git', 'branch', '-r'])
+                all_branches = [line.strip() for line in result.stdout.split('\n') if line.strip()]
+                
+                # For each branch, get the file tree
+                for branch in self.config.branches:
+                    branch_ref = f"origin/{branch}"
+                    if branch_ref in all_branches:
+                        result = self.run_git_command(['git', 'ls-tree', '-r', '--name-only', branch_ref])
+                        files = [line.strip() for line in result.stdout.split('\n') if line.strip()]
+                        common_files[branch] = files
+            else:
+                # For project mode, analyze current directory structure
+                os.chdir(self.source_repo_path)
+                for project in self.config.projects:
+                    if os.path.exists(project):
+                        project_files = []
+                        for root, dirs, files in os.walk(project):
+                            for file in files:
+                                rel_path = os.path.relpath(os.path.join(root, file), '.')
+                                project_files.append(rel_path)
+                        common_files[project] = project_files
             
-            # For each branch, get the file tree
-            for branch in self.config.branches:
-                branch_ref = f"origin/{branch}"
-                if branch_ref in all_branches:
-                    result = self.run_git_command(['git', 'ls-tree', '-r', '--name-only', branch_ref])
-                    files = [line.strip() for line in result.stdout.split('\n') if line.strip()]
-                    common_files[branch] = files
-            
-            # Find common files across branches
+            # Find common files across branches/projects
             if len(common_files) > 1:
-                all_files = set(common_files[self.config.branches[0]])
-                for branch in self.config.branches[1:]:
-                    all_files = all_files.intersection(set(common_files.get(branch, [])))
+                all_files = set(list(common_files.values())[0])
+                for files in list(common_files.values())[1:]:
+                    all_files = all_files.intersection(set(files))
                 
                 if all_files:
-                    self.logger.info(f"Found {len(all_files)} common files across all branches")
+                    self.logger.info(f"Found {len(all_files)} common files across all branches/projects")
                     self.logger.info(f"Common files: {list(all_files)[:10]}...")  # Show first 10
         
         return common_files
@@ -300,21 +410,39 @@ class RepoSplitter:
             # Analyze common files (optional AI extension)
             self.analyze_common_files()
             
-            # Process each branch
-            for branch in self.config.branches:
-                repo_name = f"{branch}-app"
-                description = f"Application extracted from {branch} branch of monorepo"
-                
-                self.logger.info(f"Processing branch: {branch}")
-                
-                # Create GitHub repository
-                repo_url = self.create_github_repo(repo_name, description)
-                if repo_url:
-                    # Extract branch to new repository
-                    self.extract_branch_to_repo(branch, repo_name, repo_url)
-                    self.logger.info(f"Repository URL: {repo_url}")
-                else:
-                    self.logger.error(f"Failed to create repository for branch: {branch}")
+            if self.config.mode == 'branch':
+                # Process each branch
+                for branch in self.config.branches:
+                    repo_name = f"{branch}-app"
+                    description = f"Application extracted from {branch} branch of monorepo"
+                    
+                    self.logger.info(f"Processing branch: {branch}")
+                    
+                    # Create GitHub repository
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        # Extract branch to new repository
+                        self.extract_branch_to_repo(branch, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for branch: {branch}")
+            
+            else:  # project mode
+                # Process each project
+                for project in self.config.projects:
+                    repo_name = f"{project}-app"
+                    description = f"Application extracted from {project} project of monorepo"
+                    
+                    self.logger.info(f"Processing project: {project}")
+                    
+                    # Create GitHub repository
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        # Extract project to new repository
+                        self.extract_project_to_repo(project, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for project: {project}")
             
             # Process common libraries
             if self.config.common_path:
@@ -352,18 +480,56 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Split GitHub monorepo into multiple repositories")
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making changes')
+    parser.add_argument('--mode', choices=['branch', 'project'], default='branch', 
+                       help='Splitting mode: branch (different branches) or project (same branch, different projects)')
     args = parser.parse_args()
     
     try:
-        # Create config with dry-run flag
-        config = RepoSplitterConfig(
-            source_repo_url='',  # Will be loaded from .env
-            branches=[],
-            common_path=None,
-            org='',
-            github_token='',
-            dry_run=args.dry_run
-        )
+        # Load configuration from environment first
+        load_dotenv()
+        
+        # Override mode if specified in command line
+        mode = args.mode
+        if os.getenv('MODE'):
+            mode = os.getenv('MODE').lower()
+        
+        if mode == 'branch':
+            branches = os.getenv('BRANCHES', '').split(',')
+            branches = [branch.strip() for branch in branches if branch.strip()]
+            config = RepoSplitterConfig(
+                source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
+                mode=mode,
+                branches=branches,
+                common_path=os.getenv('COMMON_PATH'),
+                org=os.getenv('ORG', ''),
+                github_token=os.getenv('GITHUB_TOKEN', ''),
+                dry_run=args.dry_run
+            )
+        else:  # project mode
+            projects = os.getenv('PROJECTS', '').split(',')
+            projects = [project.strip() for project in projects if project.strip()]
+            config = RepoSplitterConfig(
+                source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
+                mode=mode,
+                projects=projects,
+                common_path=os.getenv('COMMON_PATH'),
+                org=os.getenv('ORG', ''),
+                github_token=os.getenv('GITHUB_TOKEN', ''),
+                dry_run=args.dry_run
+            )
+        
+        # Validate required fields
+        if not config.source_repo_url:
+            raise ValueError("SOURCE_REPO_URL is required")
+        if not config.org:
+            raise ValueError("ORG is required")
+        if not config.github_token:
+            raise ValueError("GITHUB_TOKEN is required")
+        
+        if mode == 'branch' and not config.branches:
+            raise ValueError("BRANCHES is required for branch mode")
+        elif mode == 'project' and not config.projects:
+            raise ValueError("PROJECTS is required for project mode")
         
         with RepoSplitter(config) as splitter:
             splitter.split_repositories()

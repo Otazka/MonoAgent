@@ -1,16 +1,41 @@
 # GitHub Monorepo Splitter AI Agent
 
-A Python-based AI agent that automatically splits a GitHub monorepo into multiple repositories, preserving git history for each branch and common libraries.
+A Python-based AI agent that automatically splits a GitHub monorepo into multiple repositories, preserving git history for each project and common libraries.
 
 ## Features
 
+- **Dual Mode Support**: 
+  - **Branch Mode**: Extract different branches into separate repositories
+  - **Project Mode**: Extract different projects from the same branch into separate repositories
 - **Automatic Repository Creation**: Creates new GitHub repositories via API
-- **History Preservation**: Maintains complete git history for each extracted branch
-- **Branch Extraction**: Extracts each specified branch into its own repository
+- **History Preservation**: Maintains complete git history for each extracted project
 - **Common Libraries**: Extracts shared code into a separate `common-libs` repository
-- **AI-Powered Analysis**: Optional analysis to identify common files across branches
+- **AI-Powered Analysis**: Optional analysis to identify common files across projects
 - **Dry Run Mode**: Test the process without making actual changes
 - **Comprehensive Logging**: Detailed logs for debugging and monitoring
+
+## Use Cases
+
+### Branch Mode (Original)
+For monorepos where different applications are on different branches:
+```
+monorepo/
+├── frontend/ (on frontend branch)
+├── backend/  (on backend branch)
+├── mobile/   (on mobile branch)
+└── shared/   (common libraries)
+```
+
+### Project Mode (New)
+For monorepos where different projects are on the same main branch with shared libraries:
+```
+monorepo/
+├── fractol/     (project 1)
+├── printf/      (project 2)
+├── pushswap/    (project 3)
+├── libft/       (shared library)
+└── other-files/
+```
 
 ## Requirements
 
@@ -23,12 +48,20 @@ A Python-based AI agent that automatically splits a GitHub monorepo into multipl
 
 1. **Clone or download this repository**
 
-2. **Install Python dependencies**:
+2. **Create and activate a virtual environment** (recommended):
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On macOS/Linux
+   # or
+   venv\Scripts\activate     # On Windows
+   ```
+
+3. **Install Python dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install git-filter-repo**:
+4. **Install git-filter-repo**:
    ```bash
    # On macOS with Homebrew
    brew install git-filter-repo
@@ -43,9 +76,12 @@ A Python-based AI agent that automatically splits a GitHub monorepo into multipl
    pip install git-filter-repo
    ```
 
-4. **Configure the environment**:
+5. **Configure the environment**:
    ```bash
-   # The .env file is already created - edit it with your configuration
+   # Copy the example configuration
+   cp env.example .env
+   
+   # Edit the .env file with your configuration
    nano .env
    # or
    code .env
@@ -58,20 +94,32 @@ The `.env` file is already created. Edit it with your configuration values:
 ### Required Variables
 
 - `SOURCE_REPO_URL`: SSH or HTTPS URL of the monorepo to split
-- `BRANCHES`: Comma-separated list of branch names (each becomes a separate app)
+- `MODE`: Either `branch` or `project` (default: `branch`)
 - `ORG`: GitHub organization or username to host the new repositories
 - `GITHUB_TOKEN`: GitHub Personal Access Token with repo scope
+
+### Mode-Specific Variables
+
+#### Branch Mode
+- `BRANCHES`: Comma-separated list of branch names (each becomes a separate app)
+
+#### Project Mode
+- `PROJECTS`: Comma-separated list of project directory names (each becomes a separate app)
 
 ### Optional Variables
 
 - `COMMON_PATH`: Path to common libraries folder (extracted to `common-libs` repo)
 - `OPENAI_API_KEY`: OpenAI API key for AI-powered common file analysis
 
-### Example Configuration
+### Example Configurations
 
+#### Branch Mode Configuration
 ```env
 # Monorepo to split (SSH or HTTPS URL)
 SOURCE_REPO_URL=git@github.com:mycompany/monorepo.git
+
+# Mode: branch-based splitting
+MODE=branch
 
 # Comma-separated list of branch names (apps)
 BRANCHES=frontend,backend,mobile,admin,api
@@ -84,9 +132,27 @@ ORG=mycompany
 
 # GitHub Personal Access Token with repo scope
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
 
-# Optional: OpenAI API Key for AI-powered common file analysis
-# OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#### Project Mode Configuration
+```env
+# Monorepo to split (SSH or HTTPS URL)
+SOURCE_REPO_URL=git@github.com:mycompany/monorepo.git
+
+# Mode: project-based splitting
+MODE=project
+
+# Comma-separated list of project directories
+PROJECTS=fractol,printf,pushswap
+
+# Path for common libraries inside the repo (optional)
+COMMON_PATH=libft
+
+# GitHub organization or username to create new repos under
+ORG=mycompany
+
+# GitHub Personal Access Token with repo scope
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Usage
@@ -100,12 +166,20 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 2. **Dry Run (Test Mode)**:
    ```bash
-   python split_repo_agent.py --dry-run
+   # For branch mode
+   python split_repo_agent.py --dry-run --mode branch
+   
+   # For project mode
+   python split_repo_agent.py --dry-run --mode project
    ```
 
 3. **Actual Execution**:
    ```bash
-   python split_repo_agent.py
+   # For branch mode
+   python split_repo_agent.py --mode branch
+   
+   # For project mode
+   python split_repo_agent.py --mode project
    ```
 
 ### Programmatic Usage
@@ -115,10 +189,23 @@ You can also use the agent programmatically:
 ```python
 from split_repo_agent import RepoSplitter, RepoSplitterConfig
 
+# Branch mode example
 config = RepoSplitterConfig(
     source_repo_url="git@github.com:org/monorepo.git",
-    branches=["app1", "app2", "app3", "app4", "app5"],
+    mode="branch",
+    branches=["app1", "app2", "app3"],
     common_path="shared/",
+    org="my-org",
+    github_token="ghp_xxx",
+    dry_run=False
+)
+
+# Project mode example
+config = RepoSplitterConfig(
+    source_repo_url="git@github.com:org/monorepo.git",
+    mode="project",
+    projects=["fractol", "printf", "pushswap"],
+    common_path="libft",
     org="my-org",
     github_token="ghp_xxx",
     dry_run=False
@@ -130,26 +217,28 @@ with RepoSplitter(config) as splitter:
 
 ### Example Output
 
+#### Branch Mode Output
 ```
-2024-01-15 10:30:00 - INFO - Configuration loaded: 5 branches, org: mycompany
+2024-01-15 10:30:00 - INFO - Configuration loaded: mode=branch, org: mycompany
 2024-01-15 10:30:01 - INFO - Cloning source repository: git@github.com:mycompany/monorepo.git
-2024-01-15 10:30:05 - INFO - Analyzing branches for common files...
+2024-01-15 10:30:05 - INFO - Analyzing for common files...
 2024-01-15 10:30:06 - INFO - Found 15 common files across all branches
 2024-01-15 10:30:07 - INFO - Processing branch: frontend
 2024-01-15 10:30:08 - INFO - Created repository: frontend-app
 2024-01-15 10:30:12 - INFO - Successfully extracted branch 'frontend' to 'frontend-app'
 2024-01-15 10:30:12 - INFO - Repository URL: https://github.com/mycompany/frontend-app.git
-...
-2024-01-15 10:35:00 - INFO - ==================================================
-2024-01-15 10:35:00 - INFO - REPOSITORY SPLITTING COMPLETED
-2024-01-15 10:35:00 - INFO - ==================================================
-2024-01-15 10:35:00 - INFO - Created 6 repositories:
-2024-01-15 10:35:00 - INFO -   - frontend-app
-2024-01-15 10:35:00 - INFO -   - backend-app
-2024-01-15 10:35:00 - INFO -   - mobile-app
-2024-01-15 10:35:00 - INFO -   - admin-app
-2024-01-15 10:35:00 - INFO -   - api-app
-2024-01-15 10:35:00 - INFO -   - common-libs
+```
+
+#### Project Mode Output
+```
+2024-01-15 10:30:00 - INFO - Configuration loaded: mode=project, org: mycompany
+2024-01-15 10:30:01 - INFO - Cloning source repository: git@github.com:mycompany/monorepo.git
+2024-01-15 10:30:05 - INFO - Analyzing for common files...
+2024-01-15 10:30:06 - INFO - Found 5 common files across all projects
+2024-01-15 10:30:07 - INFO - Processing project: fractol
+2024-01-15 10:30:08 - INFO - Created repository: fractol-app
+2024-01-15 10:30:12 - INFO - Successfully extracted project 'fractol' to 'fractol-app'
+2024-01-15 10:30:12 - INFO - Repository URL: https://github.com/mycompany/fractol-app.git
 ```
 
 ## How It Works
@@ -158,28 +247,34 @@ with RepoSplitter(config) as splitter:
 - Clones the source monorepo as a mirror to preserve all history
 - Uses temporary directories for processing
 
-### 2. Branch Extraction
+### 2. Branch Mode Extraction
 For each branch in the `BRANCHES` configuration:
 - Creates a new GitHub repository via API
 - Extracts only that branch's history
 - Renames the branch to `main`
 - Pushes the complete history to the new repository
 
-### 3. Common Libraries Extraction
+### 3. Project Mode Extraction
+For each project in the `PROJECTS` configuration:
+- Creates a new GitHub repository via API
+- Uses `git filter-repo` to extract only files from the specified project directory
+- Preserves history for the extracted files
+- Pushes the complete history to the new repository
+
+### 4. Common Libraries Extraction
 If `COMMON_PATH` is specified:
 - Uses `git filter-repo` to extract only files from the specified path
 - Creates a `common-libs` repository
 - Preserves history for the extracted files
 
-### 4. AI Analysis (Optional)
-- Analyzes file trees across all branches
+### 5. AI Analysis (Optional)
+- Analyzes file trees across all branches/projects
 - Identifies common files that might be candidates for shared libraries
 - Provides suggestions for what could be moved to `COMMON_PATH`
 
 ## Repository Structure
 
-After splitting, you'll have:
-
+### After Branch Mode Splitting
 ```
 mycompany/
 ├── frontend-app/     # Extracted from frontend branch
@@ -190,16 +285,34 @@ mycompany/
 └── common-libs/      # Extracted from COMMON_PATH
 ```
 
+### After Project Mode Splitting
+```
+mycompany/
+├── fractol-app/      # Extracted from fractol/ directory
+├── printf-app/       # Extracted from printf/ directory
+├── pushswap-app/     # Extracted from pushswap/ directory
+└── common-libs/      # Extracted from libft/ directory
+```
+
 ## Project Structure
 
 ```
-aiAgent/
+morethaneternity-project-main/
 ├── split_repo_agent.py    # Main agent script
 ├── test_config.py         # Configuration validation script
 ├── example_usage.py       # Programmatic usage example
+├── force_update_repos.py  # Force update existing repositories
+├── setup_project_mode.py  # Setup script for project mode
+├── update_org_config.py   # Update organization configuration
+├── env.example            # Example environment configuration
+├── PROJECT_MODE_GUIDE.md  # Specific guide for project mode
+├── debug_agent.py         # Debug utilities
+├── run_agent.py           # Simple runner script
+├── test_agent_direct.py   # Direct testing script
 ├── requirements.txt       # Python dependencies
 ├── .env                   # Configuration file (edit this)
 ├── .gitignore            # Git ignore rules
+├── repo_splitter.log      # Log file (created during execution)
 └── README.md             # This documentation
 ```
 
@@ -241,6 +354,19 @@ The agent includes comprehensive error handling:
    - Verify GitHub token has `repo` scope
    - Check organization permissions if creating repos in an org
 
+5. **Project Not Found (Project Mode)**
+   - Ensure project directories exist in the repository
+   - Check that `PROJECTS` variable contains valid directory names
+
+6. **Repository Already Exists**
+   - The agent will skip creation if repositories already exist
+   - Use `force_update_repos.py` to update existing repositories with new content
+   - Or delete existing repositories manually if you want to recreate them
+
+7. **Virtual Environment Issues**
+   - Always activate the virtual environment: `source venv/bin/activate`
+   - If you get module errors, reinstall dependencies: `pip install -r requirements.txt`
+
 ### Debug Mode
 
 Enable debug logging by modifying the script:
@@ -275,9 +401,49 @@ After setting up your configuration:
 
 1. **Edit `.env`** with your actual values
 2. **Run `python test_config.py`** to validate everything
-3. **Test with `python split_repo_agent.py --dry-run`**
-4. **Execute with `python split_repo_agent.py`**
+3. **Test with `python split_repo_agent.py --dry-run --mode project`**
+4. **Execute with `python split_repo_agent.py --mode project`**
 
-The agent will create 6 repositories total:
-- 5 app repositories (one for each branch)
-- 1 common-libs repository (if `COMMON_PATH` is specified)
+The agent will create repositories based on your mode:
+- **Branch Mode**: One repository per branch + common-libs (if specified)
+- **Project Mode**: One repository per project + common-libs (if specified)
+
+## Additional Tools
+
+### Force Update Existing Repositories
+If repositories already exist and you want to update them with new content:
+```bash
+python force_update_repos.py
+```
+
+### Setup Project Mode
+Quick setup for project mode configuration:
+```bash
+python setup_project_mode.py
+```
+
+### Update Organization Configuration
+Update the organization/username in your configuration:
+```bash
+python update_org_config.py
+```
+
+## Real-World Example
+
+This agent was successfully used to split a monorepo with the following structure:
+```
+testmonorepo/
+├── libft/           # Shared library
+├── fractol/         # Project 1
+├── printf/          # Project 2  
+└── pushswap/        # Project 3
+```
+
+Into separate repositories:
+```
+Otazka/
+├── fractol-app/      # Contains only fractol/ files with history
+├── printf-app/       # Contains only printf/ files with history
+├── pushswap-app/     # Contains only pushswap/ files with history
+└── common-libs/      # Contains only libft/ files with history
+```
