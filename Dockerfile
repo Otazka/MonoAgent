@@ -28,6 +28,10 @@ RUN chown -R monoagent:monoagent /app
 # Switch to non-root user
 USER monoagent
 
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import split_repo_agent; print('✅ MonoAgent healthy')" || exit 1
+
 # Default entrypoint runs the splitter; pass flags via `docker run ... -- <flags>` or override CMD
 ENTRYPOINT ["python", "split_repo_agent.py"]
 CMD ["--analyze-only", "--dry-run"]

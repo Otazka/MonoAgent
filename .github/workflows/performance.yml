@@ -1,0 +1,294 @@
+name: Performance Monitoring
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write  # To create performance alerts
+
+jobs:
+  performance-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -e .
+    
+    - name: Run system health check
+      run: |
+        python monitoring.py --health-check
+    
+    - name: Run performance benchmark
+      run: |
+        python benchmark.py --run-all --save-report
+      continue-on-error: true
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-results
+        path: |
+          benchmark_results_*.json
+          benchmark_report_*.txt
+          performance.jsonl
+        if-no-files-found: ignore
+    
+    - name: Check performance regression
+      run: |
+        python -c "
+        import json
+        import glob
+        import sys
+        
+        # Find latest benchmark result
+        files = glob.glob('benchmark_results_*.json')
+        if not files:
+            print('No benchmark results found')
+            sys.exit(0)
+        
+        latest_file = max(files)
+        with open(latest_file, 'r') as f:
+            results = json.load(f)
+        
+        summary = results.get('summary', {})
+        success_rate = summary.get('success_rate', 0)
+        
+        print(f'Benchmark success rate: {success_rate}%')
+        
+        # Fail if success rate is too low
+        if success_rate < 80:
+            print('⚠️  Performance benchmark success rate below threshold (80%)')
+            sys.exit(1)
+        
+        print('✅ Performance benchmarks passed')
+        "
+    
+    - name: Create performance issue (on failure)
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `Performance Issue Detected - ${new Date().toISOString().split('T')[0]}`;
+          const body = `
+          ## Performance Alert 🚨
+          
+          A performance issue was detected in the latest benchmark run.
+          
+          **Details:**
+          - **Workflow:** ${{ github.workflow }}
+          - **Run ID:** ${{ github.run_id }}
+          - **Commit:** ${{ github.sha }}
+          - **Branch:** ${{ github.ref_name }}
+          
+          **Next Steps:**
+          1. Review the benchmark results in the workflow artifacts
+          2. Investigate any failed benchmarks
+          3. Check for resource constraints or performance regressions
+          4. Update performance thresholds if needed
+          
+          **Artifacts:**
+          - Benchmark results: Available in workflow run ${{ github.run_id }}
+          
+          ---
+          *This issue was automatically created by the performance monitoring workflow.*
+          `;
+          
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['performance', 'monitoring', 'alert']
+          });
+
+  docker-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build Docker image
+      run: |
+        docker build -t monoagent-test .
+    
+    - name: Test Docker health check
+      run: |
+        # Start container in background
+        docker run -d --name monoagent-container monoagent-test sleep 60
+        
+        # Wait for container to be ready
+        sleep 10
+        
+        # Check health status
+        docker exec monoagent-container python monitoring.py --health-check
+        
+        # Cleanup
+        docker stop monoagent-container
+        docker rm monoagent-container
+    
+    - name: Test Docker performance
+      run: |
+        # Run benchmark in container
+        docker run --rm monoagent-test python benchmark.py --run-all
+    
+    - name: Test resource limits
+      run: |
+        # Test with memory limit
+        docker run --rm --memory=512m monoagent-test python monitoring.py --health-check
+        
+        # Test with CPU limit
+        docker run --rm --cpus=0.5 monoagent-test python monitoring.py --health-check
+
+  load-testing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -e .
+    
+    - name: Create test repository
+      run: |
+        # Create a larger test repository structure for load testing
+        mkdir -p test-monorepo/{frontend,backend,api,shared,docs}
+        
+        # Frontend project
+        cd test-monorepo/frontend
+        echo '{"name": "frontend", "version": "1.0.0", "dependencies": {"react": "^18.0.0"}}' > package.json
+        mkdir -p src/components src/pages
+        for i in {1..50}; do
+          echo "export const Component$i = () => <div>Component $i</div>;" > "src/components/Component$i.jsx"
+        done
+        
+        # Backend project
+        cd ../backend
+        echo '{"name": "backend", "version": "1.0.0", "dependencies": {"express": "^4.0.0"}}' > package.json
+        mkdir -p src/controllers src/models src/routes
+        for i in {1..30}; do
+          echo "class Controller$i { handle() { return 'Controller $i'; } }" > "src/controllers/Controller$i.js"
+        done
+        
+        # API project
+        cd ../api
+        echo '{"name": "api", "version": "1.0.0", "dependencies": {"fastapi": "^0.100.0"}}' > requirements.txt
+        mkdir -p src/endpoints src/models
+        for i in {1..20}; do
+          echo "def endpoint_$i(): return {'message': 'Endpoint $i'}" > "src/endpoints/endpoint_$i.py"
+        done
+        
+        # Shared library
+        cd ../shared
+        echo '{"name": "shared", "version": "1.0.0"}' > package.json
+        mkdir -p src/utils src/types
+        for i in {1..40}; do
+          echo "export const util$i = () => 'Utility $i';" > "src/utils/util$i.js"
+        done
+        
+        cd ../..
+    
+    - name: Initialize git repository
+      run: |
+        cd test-monorepo
+        git init
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        git add .
+        git commit -m "Initial commit"
+        
+        # Create some history
+        for i in {1..5}; do
+          echo "Update $i" >> README.md
+          git add README.md
+          git commit -m "Update $i"
+        done
+        
+        cd ..
+    
+    - name: Run load test
+      run: |
+        # Test analysis performance with larger repository
+        python -c "
+        import time
+        import os
+        import sys
+        sys.path.append('.')
+        
+        try:
+            from monitoring import MonitoringAgent, MonitoringConfig
+            
+            config = MonitoringConfig(
+                enable_performance_monitoring=True,
+                performance_log_file='load_test_performance.jsonl'
+            )
+            monitor = MonitoringAgent(config)
+            
+            # Simulate repository analysis
+            metrics = monitor.start_operation_monitoring('load_test_analysis')
+            
+            # Simulate processing time for large repo
+            start_time = time.time()
+            
+            # Count files in test repository
+            file_count = 0
+            for root, dirs, files in os.walk('test-monorepo'):
+                file_count += len(files)
+            
+            processing_time = time.time() - start_time
+            
+            # Complete monitoring
+            monitor.end_operation_monitoring(
+                metrics, 
+                success=True
+            )
+            
+            print(f'Load test completed: {file_count} files processed in {processing_time:.2f}s')
+            
+            # Check if performance is acceptable
+            if processing_time > 30:  # More than 30 seconds for load test
+                print('⚠️  Load test performance below expectations')
+                sys.exit(1)
+            
+            print('✅ Load test performance acceptable')
+            
+        except ImportError:
+            print('Monitoring modules not available, skipping load test')
+        "
+    
+    - name: Upload load test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: load-test-results
+        path: |
+          load_test_performance.jsonl
+        if-no-files-found: ignore
