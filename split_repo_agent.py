@@ -33,6 +33,7 @@ from typing import List, Dict, Optional, Union, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -491,6 +492,14 @@ class RepoSplitter:
             f"Configuration loaded: org={config.org}, mode={config.mode}, auto_detect={config.auto_detect}"
         )
         return config
+
+    def _sanitize_repo_name(self, raw_name: str) -> str:
+        """Sanitize a repository name to be GitHub-compatible and consistent."""
+        name = raw_name.strip().lower()
+        name = re.sub(r"[^a-z0-9._-]", "-", name)
+        name = re.sub(r"-+", "-", name)
+        name = name.strip("-._")
+        return name or "repo"
     
     def run_git_command(self, command: List[str], cwd: str = None, check: bool = True) -> subprocess.CompletedProcess:
         """Run a git command and return the result."""
@@ -515,11 +524,10 @@ class RepoSplitter:
         
         self.logger.info(f"Cloning source repository: {self.config.source_repo_url}")
         self.logger.info(f"Temporary directory: {self.temp_dir}")
-        
-        if not self.config.dry_run:
-            self.run_git_command([
-                'git', 'clone', '--mirror', self.config.source_repo_url, self.source_repo_path
-            ])
+        # Always clone for analysis and local filtering (safe in dry-run)
+        self.run_git_command([
+            'git', 'clone', '--mirror', self.config.source_repo_url, self.source_repo_path
+        ])
         
         return self.source_repo_path
     
@@ -540,46 +548,51 @@ class RepoSplitter:
     
     def create_github_repo(self, repo_name: str, description: str = "") -> Optional[str]:
         """Create a new GitHub repository via API."""
+        # Sanitize name early for consistent logs
+        repo_name = self._sanitize_repo_name(repo_name)
         if self.config.dry_run:
             self.logger.info(f"[DRY RUN] Would create repo: {repo_name}")
             return f"https://github.com/{self.config.org}/{repo_name}.git"
         
-        try:
-            # Check if repo already exists
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, 4):
             try:
-                existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
-                self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
-                return existing_repo.clone_url
-            except GithubException:
-                pass
-            
-            # Create new repository
-            if '/' in self.config.org:
-                # Organization (note: org names typically have no '/')
-                org = self.github.get_organization(self.config.org)
-                repo = org.create_repo(
-                    name=repo_name,
-                    description=description,
-                    private=self.config.private_repos,
-                    auto_init=False
-                )
-            else:
-                # User
-                user = self.github.get_user()
-                repo = user.create_repo(
-                    name=repo_name,
-                    description=description,
-                    private=self.config.private_repos,
-                    auto_init=False
-                )
-            
-            self.logger.info(f"Created repository: {repo_name}")
-            self.created_repos.append(repo_name)
-            return repo.clone_url
-            
-        except GithubException as e:
-            self.logger.error(f"Failed to create repository {repo_name}: {e}")
-            return None
+                # Check if repo already exists
+                try:
+                    existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
+                    self.logger.warning(f"Repository {repo_name} already exists, skipping creation")
+                    return existing_repo.clone_url
+                except GithubException:
+                    pass
+                
+                # Try as organization first; fallback to user
+                try:
+                    org = self.github.get_organization(self.config.org)
+                    repo = org.create_repo(
+                        name=repo_name,
+                        description=description,
+                        private=self.config.private_repos,
+                        auto_init=False
+                    )
+                except GithubException:
+                    user = self.github.get_user()
+                    repo = user.create_repo(
+                        name=repo_name,
+                        description=description,
+                        private=self.config.private_repos,
+                        auto_init=False
+                    )
+                
+                self.logger.info(f"Created repository: {repo_name}")
+                self.created_repos.append(repo_name)
+                return repo.clone_url
+            except GithubException as e:
+                last_exc = e
+                self.logger.warning(f"GitHub API error creating {repo_name} (attempt {attempt}/3): {e}")
+                time.sleep(min(2 ** attempt, 8))
+        
+        self.logger.error(f"Failed to create repository {repo_name}: {last_exc}")
+        return None
     
     def extract_project_to_repo(self, project: ProjectInfo, repo_name: str, repo_url: str):
         """Extract a project to its own repository."""
@@ -591,8 +604,11 @@ class RepoSplitter:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, project_repo_path])
             
-            # Change to the project repository directory
-            os.chdir(project_repo_path)
+            # Validate project path exists
+            target_path = os.path.join(project_repo_path, project.path)
+            if not os.path.exists(target_path):
+                self.logger.error(f"Project path does not exist in repo: {project.path}")
+                return
             
             # Use git filter-repo to extract only the project path
             self.run_git_command([
@@ -600,18 +616,18 @@ class RepoSplitter:
                 '--path', project.path,
                 '--path-rename', f'{project.path}:',
                 '--force'
-            ])
+            ], cwd=project_repo_path)
             
             # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=project_repo_path)
             
             # Add new remote
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
+            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=project_repo_path)
             
             # Ensure default branch name
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=project_repo_path)
             # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=project_repo_path)
             
             self.logger.info(f"Successfully extracted project '{project.name}' to '{repo_name}'")
     
@@ -625,8 +641,11 @@ class RepoSplitter:
             # Clone the mirror repo
             self.run_git_command(['git', 'clone', self.source_repo_path, component_repo_path])
             
-            # Change to the component repository directory
-            os.chdir(component_repo_path)
+            # Validate component path exists
+            target_path = os.path.join(component_repo_path, component.path)
+            if not os.path.exists(target_path):
+                self.logger.error(f"Common component path does not exist in repo: {component.path}")
+                return
             
             # Use git filter-repo to extract only the component path
             self.run_git_command([
@@ -634,18 +653,18 @@ class RepoSplitter:
                 '--path', component.path,
                 '--path-rename', f'{component.path}:',
                 '--force'
-            ])
+            ], cwd=component_repo_path)
             
             # Remove remote origin
-            self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=component_repo_path)
             
             # Add new remote
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
+            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=component_repo_path)
             
             # Ensure default branch name
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=component_repo_path)
             # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=component_repo_path)
             
             self.logger.info(f"Successfully extracted common component '{component.name}' to '{repo_name}'")
 
@@ -656,22 +675,34 @@ class RepoSplitter:
         if not self.config.dry_run:
             # Clone the mirror repo to working copy
             self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
-            os.chdir(branch_repo_path)
+            
+            # Validate branch exists
+            exists = True
+            try:
+                self.run_git_command(['git', 'show-ref', '--verify', f'refs/heads/{branch_name}'], cwd=branch_repo_path)
+            except Exception:
+                try:
+                    self.run_git_command(['git', 'show-ref', '--verify', f'refs/remotes/origin/{branch_name}'], cwd=branch_repo_path)
+                except Exception:
+                    exists = False
+            if not exists:
+                self.logger.error(f"Branch does not exist: {branch_name}")
+                return
             # Checkout target branch (create local tracking)
             # Try both local and origin refs
             try:
-                self.run_git_command(['git', 'checkout', branch_name])
+                self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
             except Exception:
-                self.run_git_command(['git', 'checkout', f'origin/{branch_name}'])
-                self.run_git_command(['git', 'branch', branch_name, f'origin/{branch_name}'])
-                self.run_git_command(['git', 'checkout', branch_name])
+                self.run_git_command(['git', 'checkout', f'origin/{branch_name}'], cwd=branch_repo_path)
+                self.run_git_command(['git', 'branch', branch_name, f'origin/{branch_name}'], cwd=branch_repo_path)
+                self.run_git_command(['git', 'checkout', branch_name], cwd=branch_repo_path)
             # Rename to default branch if needed
-            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch], cwd=branch_repo_path)
             # Remove and add new remote
-            self.run_git_command(['git', 'remote', 'remove', 'origin'])
-            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
+            self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=branch_repo_path)
+            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url], cwd=branch_repo_path)
             # Push
-            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch], cwd=branch_repo_path)
             self.logger.info(f"Successfully extracted branch '{branch_name}' to '{repo_name}'")
     
     def split_repositories(self):
@@ -694,7 +725,7 @@ class RepoSplitter:
 
                 # Process projects
                 for project_name, project in projects.items():
-                    repo_name = self.config.repo_name_template_app.format(name=project.name)
+                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project.name))
                     description = f"{project.type.title()} application extracted from monorepo"
                     self.logger.info(f"Processing project: {project.name}")
                     repo_url = self.create_github_repo(repo_name, description)
@@ -706,7 +737,7 @@ class RepoSplitter:
 
                 # Process common components
                 for component_name, component in common_components.items():
-                    repo_name = self.config.repo_name_template_lib.format(name=component.name)
+                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=component.name))
                     description = "Common library component extracted from monorepo"
                     self.logger.info(f"Processing common component: {component.name}")
                     repo_url = self.create_github_repo(repo_name, description)
@@ -728,7 +759,7 @@ class RepoSplitter:
                         continue
                     project_name = os.path.basename(project_path)
                     project = ProjectInfo(name=project_name, path=project_path, type='app')
-                    repo_name = self.config.repo_name_template_app.format(name=project_name)
+                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project_name))
                     description = "Application extracted from monorepo"
                     self.logger.info(f"Processing project: {project.name}")
                     repo_url = self.create_github_repo(repo_name, description)
@@ -741,7 +772,7 @@ class RepoSplitter:
                 if self.config.common_path:
                     comp_name = os.path.basename(self.config.common_path)
                     component = CommonComponent(name=comp_name, path=self.config.common_path)
-                    repo_name = self.config.repo_name_template_lib.format(name=comp_name)
+                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=comp_name))
                     description = "Common library component extracted from monorepo"
                     self.logger.info(f"Processing common component: {component.name}")
                     repo_url = self.create_github_repo(repo_name, description)
@@ -761,7 +792,7 @@ class RepoSplitter:
                     name_clean = branch_name.strip()
                     if not name_clean:
                         continue
-                    repo_name = self.config.repo_name_template_app.format(name=name_clean)
+                    repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=name_clean))
                     description = f"Repository extracted from branch {name_clean}"
                     self.logger.info(f"Processing branch: {name_clean}")
                     repo_url = self.create_github_repo(repo_name, description)

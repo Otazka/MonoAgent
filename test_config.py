@@ -88,7 +88,7 @@ def check_env_file():
     load_dotenv()
     
     # Check mode
-    mode = os.getenv('MODE', 'branch').lower()
+    mode = os.getenv('MODE', 'auto').lower()
     print(f"✅ MODE: {mode}")
     
     required_vars = ['SOURCE_REPO_URL', 'ORG', 'GITHUB_TOKEN']
@@ -99,8 +99,8 @@ def check_env_file():
     elif mode == 'project':
         required_vars.append('PROJECTS')
     else:
-        print(f"❌ Invalid MODE: {mode}. Must be 'branch' or 'project'")
-        return False
+        # auto mode requires no additional vars
+        pass
     
     missing_vars = []
     
@@ -192,17 +192,19 @@ def main():
         
         # Show mode-specific information
         load_dotenv()
-        mode = os.getenv('MODE', 'branch').lower()
+        mode = os.getenv('MODE', 'auto').lower()
         if mode == 'branch':
             branches = os.getenv('BRANCHES', '').split(',')
             branches = [branch.strip() for branch in branches if branch.strip()]
             print(f"\nMode: Branch-based splitting")
             print(f"Will create {len(branches)} repositories (one per branch)")
-        else:
+        elif mode == 'project':
             projects = os.getenv('PROJECTS', '').split(',')
             projects = [project.strip() for project in projects if project.strip()]
             print(f"\nMode: Project-based splitting")
             print(f"Will create {len(projects)} repositories (one per project)")
+        else:
+            print(f"\nMode: Auto splitting (detected projects and common components)")
         
         common_path = os.getenv('COMMON_PATH')
         if common_path:
