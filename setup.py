@@ -16,6 +16,8 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/github-monorepo-splitter",
     packages=find_packages(),
+    # Ensure single-module entry point is included
+    py_modules=["split_repo_agent"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

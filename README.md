@@ -70,6 +70,22 @@ python split_repo_agent.py --analyze-only --dry-run
 python split_repo_agent.py --mode auto
 ```
 
+### One‑liner install (pipx/pip)
+
+Install globally with pipx (recommended):
+
+```bash
+pipx install git+https://github.com/yourusername/github-monorepo-splitter.git@v1.0.0-beta
+monorepo-splitter --analyze-only --dry-run
+```
+
+Or with pip into current environment:
+
+```bash
+pip install git+https://github.com/yourusername/github-monorepo-splitter.git@v1.0.0-beta
+monorepo-splitter --mode auto
+```
+
 ### Basic Usage
 
 1. **Create configuration file**:
@@ -107,7 +123,7 @@ docker run --rm \
   -v "$PWD/.env":/app/.env:ro \
   -v "$HOME/.ssh":/root/.ssh:ro \
   -e GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
-  monorepo-splitter:latest --analyze-only --dry-run
+  ghcr.io/yourusername/monorepo-splitter:latest --analyze-only --dry-run
 ```
 
 Example split execution to GitHub/GitLab/Bitbucket/Azure:
@@ -116,7 +132,7 @@ Example split execution to GitHub/GitLab/Bitbucket/Azure:
 docker run --rm \
   -v "$PWD/.env":/app/.env:ro \
   -v "$HOME/.ssh":/root/.ssh:ro \
-  monorepo-splitter:latest --mode auto --provider github
+  ghcr.io/yourusername/monorepo-splitter:latest --mode auto --provider github
 ```
 - ### Web UI
 
