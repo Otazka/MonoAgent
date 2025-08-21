@@ -15,6 +15,8 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **🎨 Customizable**: Configurable repository naming, privacy settings, and branch defaults
 - **📈 Progress Tracking**: Real-time progress bars for all large operations
 - **⚠️ Dependency Conflict Detection**: Advanced analysis to identify and resolve dependency conflicts
+- **🤖 AI-Powered Analysis**: Intelligent recommendations for architecture, performance, and security
+- **📊 Dependency Graph Visualization**: Beautiful visual representations of project relationships
 
 ## 🚀 Quick Start
 
@@ -100,6 +102,25 @@ Options:
   --dry-run                  Preview changes without applying
   --analyze-only             Only analyze, don't split
   --force                    Force proceed despite dependency conflicts
+  --visualize                Generate dependency graph visualizations
+
+### Usage Examples
+
+```bash
+# Basic analysis and splitting
+python split_repo_agent.py --mode auto --dry-run
+
+# Force proceed despite conflicts
+python split_repo_agent.py --force
+
+# Generate dependency graph visualizations
+python split_repo_agent.py --visualize
+
+# Analyze with AI recommendations and visualizations
+python split_repo_agent.py --analyze-only --visualize
+
+# Complete analysis with all features
+python split_repo_agent.py --analyze-only --visualize --force
 ```
 
 ## 🔧 How It Works
@@ -135,6 +156,27 @@ The tool intelligently detects and reports dependency conflicts:
 - **🟡 Shared Dependencies**: Identifies dependencies used by multiple projects
 - **💡 Resolution Suggestions**: Provides actionable recommendations for each conflict type
 - **⚡ Force Mode**: Option to proceed despite conflicts using `--force` flag
+
+### AI-Powered Analysis
+
+The tool provides intelligent recommendations across multiple domains:
+
+- **🏗️ Architecture Analysis**: Technology stack consolidation, component reusability, dependency optimization
+- **⚡ Performance Analysis**: Large project identification, build optimization, deployment efficiency
+- **🔒 Security Analysis**: Access control recommendations, repository security, team permissions
+- **📊 Complexity Scoring**: Quantified complexity and readiness scores for informed decision-making
+- **🎯 Priority Ranking**: Prioritized recommendations with impact and effort assessments
+
+### Dependency Graph Visualization
+
+Generate beautiful visual representations of your monorepo structure:
+
+- **🎨 Multiple Formats**: PNG, SVG, and DOT file generation
+- **🌈 Color-Coded Projects**: Different colors for different technology types
+- **🔗 Dependency Relationships**: Clear visualization of project dependencies
+- **⚠️ Conflict Highlighting**: Red edges for problematic dependencies
+- **📊 Interactive Elements**: Legend and comprehensive labeling
+- **🔄 Real-time Generation**: Automatic graph building during analysis
 
 ### Splitting Modes
 
@@ -218,6 +260,23 @@ The project includes GitHub Actions workflows for:
   🟡 SHARED_DEPENDENCY: 'lodash' is used by 2 projects: frontend, backend
     💡 Consider creating a shared library for 'lodash'
     💡 Move 'lodash' to a common component
+
+🤖 AI-POWERED ANALYSIS
+============================================================
+📊 Complexity Score: 45/100
+📊 Readiness Score: 75/100
+🚨 2 High-Priority Recommendations:
+  🔴 [10] Dependency Conflict Resolution
+    📝 Resolve 2 critical dependency conflicts before splitting
+    💡 Benefit: Prevent build failures and runtime issues in separated repositories
+  🟠 [8] Technology Stack Consolidation
+    📝 Consider consolidating from 2 different technologies to reduce complexity
+    💡 Benefit: Reduced maintenance overhead and improved developer productivity
+📊 Visualizations Generated:
+  • PNG: dependency_graph.png
+  • DOT: dependency_graph.dot
+  • SVG: dependency_graph.svg
+
 💡 Recommendations:
   • Split 2 detected projects into separate repositories
   • Extract 1 common components into shared libraries

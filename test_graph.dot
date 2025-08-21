@@ -1,0 +1,5 @@
+// Monorepo Dependency Graph
+digraph {
+	dpi=300 rankdir=TB size="16,12"
+	frontend [label=frontend fillcolor="#61DAFB" fontsize=12 fontweight=bold shape=box style=filled]
+}

@@ -9,9 +9,10 @@ handling complex scenarios:
 2. Common/generic components → Separate into shared library repos  
 3. Different apps on separate branches → Each app gets its own repo
 4. Intelligent project structure detection and analysis
+5. Dependency graph visualization and AI-powered recommendations
 
 Usage:
-    python split_repo_agent.py [--dry-run] [--analyze-only]
+    python split_repo_agent.py [--dry-run] [--analyze-only] [--visualize]
 
 Requirements:
     - git-filter-repo installed and available in PATH
@@ -39,6 +40,11 @@ import requests
 from dotenv import load_dotenv
 from github import Github, GithubException
 from tqdm import tqdm
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.patches import FancyBboxPatch
+import graphviz
 
 
 @dataclass
@@ -72,6 +78,7 @@ class RepoSplitterConfig:
     dry_run: bool = False
     analyze_only: bool = False
     force: bool = False  # Force proceed despite conflicts
+    visualize: bool = False  # Generate dependency graph visualizations
     auto_detect: bool = True
     manual_projects: Optional[List[str]] = None
     manual_common_paths: Optional[List[str]] = None
@@ -106,6 +113,464 @@ class DependencyInfo:
     version: Optional[str] = None
     is_dev_dependency: bool = False
     is_peer_dependency: bool = False
+
+
+@dataclass
+class AIRecommendation:
+    """AI-powered recommendation for monorepo optimization."""
+    category: str  # 'architecture', 'performance', 'security', 'maintainability'
+    title: str
+    description: str
+    impact: str  # 'high', 'medium', 'low'
+    effort: str  # 'high', 'medium', 'low'
+    priority: int  # 1-10, higher is more important
+    implementation_steps: List[str] = field(default_factory=list)
+    estimated_benefit: str = ""
+
+
+class DependencyGraphVisualizer:
+    """AI-powered dependency graph visualization and analysis."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+        self.graph = nx.DiGraph()
+        self.project_colors = {}
+        self.component_colors = {}
+        self.conflict_edges = []
+        
+    def build_graph(self, projects: Dict[str, ProjectInfo], 
+                   common_components: Dict[str, CommonComponent],
+                   conflicts: List[DependencyConflict]) -> nx.DiGraph:
+        """Build a NetworkX graph from projects, components, and conflicts."""
+        self.logger.info("🔄 Building dependency graph...")
+        
+        # Add project nodes
+        for project_name, project in projects.items():
+            self.graph.add_node(project_name, 
+                              type='project', 
+                              language=project.type,
+                              size=project.size,
+                              path=project.path)
+            self.project_colors[project_name] = self._get_project_color(project.type)
+        
+        # Add component nodes
+        for component_name, component in common_components.items():
+            self.graph.add_node(component_name,
+                              type='component',
+                              language='shared',
+                              size=len(component.files),
+                              path=component.path)
+            self.component_colors[component_name] = '#FFD700'  # Gold for components
+        
+        # Add dependency edges
+        for project_name, project in projects.items():
+            for dep in project.dependencies:
+                if dep in projects or dep in common_components:
+                    self.graph.add_edge(project_name, dep, 
+                                      type='dependency',
+                                      weight=1)
+        
+        # Mark conflict edges
+        for conflict in conflicts:
+            if conflict.conflict_type in ['missing_dependency', 'circular_dependency']:
+                self.conflict_edges.append((conflict.source_project, conflict.target_project))
+                if self.graph.has_edge(conflict.source_project, conflict.target_project):
+                    self.graph[conflict.source_project][conflict.target_project]['conflict'] = True
+                    self.graph[conflict.source_project][conflict.target_project]['conflict_type'] = conflict.conflict_type
+        
+        return self.graph
+    
+    def _get_project_color(self, project_type: str) -> str:
+        """Get color for project type."""
+        colors = {
+            'nodejs': '#61DAFB',    # React blue
+            'python': '#3776AB',    # Python blue
+            'java': '#ED8B00',      # Java orange
+            'go': '#00ADD8',        # Go blue
+            'rust': '#DEA584',      # Rust orange
+            'php': '#777BB4',       # PHP purple
+            'ruby': '#CC342D',      # Ruby red
+            'app': '#4CAF50',       # Green for generic apps
+            'shared': '#FFD700'     # Gold for shared
+        }
+        return colors.get(project_type, '#9E9E9E')  # Gray default
+    
+    def generate_visualization(self, output_path: str = "dependency_graph.png") -> str:
+        """Generate a beautiful dependency graph visualization."""
+        self.logger.info("🎨 Generating dependency graph visualization...")
+        
+        # Set up the plot
+        plt.figure(figsize=(16, 12))
+        plt.style.use('default')
+        
+        # Use spring layout for better positioning
+        pos = nx.spring_layout(self.graph, k=3, iterations=50, seed=42)
+        
+        # Draw nodes
+        self._draw_nodes(pos)
+        
+        # Draw edges
+        self._draw_edges(pos)
+        
+        # Add legend
+        self._add_legend()
+        
+        # Add title and labels
+        plt.title("Monorepo Dependency Graph", fontsize=20, fontweight='bold', pad=20)
+        plt.axis('off')
+        
+        # Save the visualization
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        plt.close()
+        
+        self.logger.info(f"📊 Dependency graph saved to: {output_path}")
+        return output_path
+    
+    def _draw_nodes(self, pos):
+        """Draw nodes with different styles for projects and components."""
+        # Draw project nodes
+        project_nodes = [n for n, d in self.graph.nodes(data=True) if d.get('type') == 'project']
+        component_nodes = [n for n, d in self.graph.nodes(data=True) if d.get('type') == 'component']
+        
+        # Project nodes (larger, colored)
+        nx.draw_networkx_nodes(self.graph, pos, 
+                             nodelist=project_nodes,
+                             node_color=[self.project_colors.get(n, '#9E9E9E') for n in project_nodes],
+                             node_size=2000,
+                             alpha=0.8,
+                             edgecolors='black',
+                             linewidths=2)
+        
+        # Component nodes (smaller, gold)
+        nx.draw_networkx_nodes(self.graph, pos,
+                             nodelist=component_nodes,
+                             node_color=[self.component_colors.get(n, '#FFD700') for n in component_nodes],
+                             node_size=1500,
+                             alpha=0.8,
+                             edgecolors='black',
+                             linewidths=2)
+        
+        # Add node labels
+        nx.draw_networkx_labels(self.graph, pos, font_size=10, font_weight='bold')
+    
+    def _draw_edges(self, pos):
+        """Draw edges with different styles for normal and conflict dependencies."""
+        # Normal edges
+        normal_edges = [(u, v) for u, v in self.graph.edges() 
+                       if not self.graph[u][v].get('conflict', False)]
+        nx.draw_networkx_edges(self.graph, pos,
+                             edgelist=normal_edges,
+                             edge_color='#666666',
+                             arrows=True,
+                             arrowsize=20,
+                             arrowstyle='->',
+                             width=1.5,
+                             alpha=0.6)
+        
+        # Conflict edges (red, thicker)
+        conflict_edges = [(u, v) for u, v in self.graph.edges() 
+                         if self.graph[u][v].get('conflict', False)]
+        nx.draw_networkx_edges(self.graph, pos,
+                             edgelist=conflict_edges,
+                             edge_color='#FF4444',
+                             arrows=True,
+                             arrowsize=25,
+                             arrowstyle='->',
+                             width=3,
+                             alpha=0.8)
+    
+    def _add_legend(self):
+        """Add a comprehensive legend to the visualization."""
+        legend_elements = []
+        
+        # Project type colors
+        project_types = {
+            'Node.js': '#61DAFB',
+            'Python': '#3776AB',
+            'Java': '#ED8B00',
+            'Go': '#00ADD8',
+            'Components': '#FFD700'
+        }
+        
+        for label, color in project_types.items():
+            legend_elements.append(mpatches.Patch(color=color, label=label))
+        
+        # Edge types
+        legend_elements.append(plt.Line2D([0], [0], color='#666666', lw=2, label='Normal Dependency'))
+        legend_elements.append(plt.Line2D([0], [0], color='#FF4444', lw=3, label='Conflict Dependency'))
+        
+        plt.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0, 1), fontsize=12)
+    
+    def generate_dot_file(self, output_path: str = "dependency_graph.dot") -> str:
+        """Generate a Graphviz DOT file for advanced visualization."""
+        self.logger.info("🔄 Generating Graphviz DOT file...")
+        
+        dot = graphviz.Digraph(comment='Monorepo Dependency Graph')
+        dot.attr(rankdir='TB', size='16,12', dpi='300')
+        
+        # Add nodes
+        for node, data in self.graph.nodes(data=True):
+            if data.get('type') == 'project':
+                color = self.project_colors.get(node, '#9E9E9E')
+                shape = 'box'
+                style = 'filled'
+            else:
+                color = self.component_colors.get(node, '#FFD700')
+                shape = 'ellipse'
+                style = 'filled'
+            
+            dot.node(node, node, 
+                    fillcolor=color, 
+                    style=style, 
+                    shape=shape,
+                    fontsize='12',
+                    fontweight='bold')
+        
+        # Add edges
+        for u, v, data in self.graph.edges(data=True):
+            if data.get('conflict', False):
+                color = 'red'
+                penwidth = '3'
+            else:
+                color = 'black'
+                penwidth = '1'
+            
+            dot.edge(u, v, color=color, penwidth=penwidth)
+        
+        # Save DOT file
+        dot.save(output_path)
+        self.logger.info(f"📊 DOT file saved to: {output_path}")
+        return output_path
+    
+    def generate_svg(self, output_path: str = "dependency_graph.svg") -> str:
+        """Generate SVG visualization from DOT file."""
+        try:
+            dot_file = self.generate_dot_file()
+            graphviz.render('dot', 'svg', dot_file, outfile=output_path)
+            self.logger.info(f"📊 SVG visualization saved to: {output_path}")
+            return output_path
+        except Exception as e:
+            self.logger.warning(f"Could not generate SVG: {e}")
+            return ""
+
+
+class AIAnalyzer:
+    """AI-powered analysis and recommendations for monorepo optimization."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+        self.recommendations = []
+    
+    def analyze_architecture(self, projects: Dict[str, ProjectInfo], 
+                           common_components: Dict[str, CommonComponent],
+                           conflicts: List[DependencyConflict]) -> List[AIRecommendation]:
+        """Generate AI-powered architectural recommendations."""
+        self.logger.info("🤖 Generating AI-powered architectural recommendations...")
+        
+        recommendations = []
+        
+        # Analyze project distribution
+        project_types = defaultdict(int)
+        for project in projects.values():
+            project_types[project.type] += 1
+        
+        # Recommendation: Standardize technology stack
+        if len(project_types) > 3:
+            recommendations.append(AIRecommendation(
+                category='architecture',
+                title='Technology Stack Consolidation',
+                description=f'Consider consolidating from {len(project_types)} different technologies to reduce complexity',
+                impact='high',
+                effort='medium',
+                priority=8,
+                implementation_steps=[
+                    'Audit current technology usage across projects',
+                    'Identify most suitable technology for each domain',
+                    'Create migration plan for non-standard technologies',
+                    'Implement shared libraries for common functionality'
+                ],
+                estimated_benefit='Reduced maintenance overhead and improved developer productivity'
+            ))
+        
+        # Analyze dependency conflicts
+        critical_conflicts = [c for c in conflicts if c.severity == 'critical']
+        if critical_conflicts:
+            recommendations.append(AIRecommendation(
+                category='architecture',
+                title='Dependency Conflict Resolution',
+                description=f'Resolve {len(critical_conflicts)} critical dependency conflicts before splitting',
+                impact='critical',
+                effort='high',
+                priority=10,
+                implementation_steps=[
+                    'Review each critical conflict in detail',
+                    'Implement shared dependency management strategy',
+                    'Create common component libraries',
+                    'Update project dependencies to use shared versions'
+                ],
+                estimated_benefit='Prevent build failures and runtime issues in separated repositories'
+            ))
+        
+        # Analyze component sharing
+        if len(common_components) < len(projects) * 0.3:
+            recommendations.append(AIRecommendation(
+                category='architecture',
+                title='Increase Component Reusability',
+                description='Extract more common components to improve code reuse',
+                impact='medium',
+                effort='medium',
+                priority=6,
+                implementation_steps=[
+                    'Identify duplicate code across projects',
+                    'Extract common utilities and components',
+                    'Create shared library structure',
+                    'Update projects to use shared components'
+                ],
+                estimated_benefit='Reduced code duplication and improved maintainability'
+            ))
+        
+        return recommendations
+    
+    def analyze_performance(self, projects: Dict[str, ProjectInfo]) -> List[AIRecommendation]:
+        """Generate performance optimization recommendations."""
+        recommendations = []
+        
+        # Analyze project sizes
+        large_projects = [p for p in projects.values() if p.size > 100]
+        if large_projects:
+            recommendations.append(AIRecommendation(
+                category='performance',
+                title='Large Project Optimization',
+                description=f'Consider splitting {len(large_projects)} large projects for better performance',
+                impact='medium',
+                effort='high',
+                priority=7,
+                implementation_steps=[
+                    'Analyze large project dependencies',
+                    'Identify logical boundaries for splitting',
+                    'Create separate repositories for large components',
+                    'Update build and deployment processes'
+                ],
+                estimated_benefit='Improved build times and deployment efficiency'
+            ))
+        
+        return recommendations
+    
+    def analyze_security(self, projects: Dict[str, ProjectInfo]) -> List[AIRecommendation]:
+        """Generate security recommendations."""
+        recommendations = []
+        
+        # Check for potential security issues
+        if len(projects) > 10:
+            recommendations.append(AIRecommendation(
+                category='security',
+                title='Repository Access Control',
+                description='Implement granular access controls for separated repositories',
+                impact='high',
+                effort='medium',
+                priority=8,
+                implementation_steps=[
+                    'Define access control policies for each repository',
+                    'Set up team-based permissions',
+                    'Implement branch protection rules',
+                    'Configure security scanning for each repository'
+                ],
+                estimated_benefit='Improved security through principle of least privilege'
+            ))
+        
+        return recommendations
+    
+    def generate_comprehensive_analysis(self, projects: Dict[str, ProjectInfo],
+                                      common_components: Dict[str, CommonComponent],
+                                      conflicts: List[DependencyConflict]) -> Dict:
+        """Generate comprehensive AI analysis report."""
+        self.logger.info("🤖 Generating comprehensive AI analysis...")
+        
+        # Get recommendations from all categories
+        arch_recs = self.analyze_architecture(projects, common_components, conflicts)
+        perf_recs = self.analyze_performance(projects)
+        sec_recs = self.analyze_security(projects)
+        
+        all_recommendations = arch_recs + perf_recs + sec_recs
+        
+        # Sort by priority
+        all_recommendations.sort(key=lambda x: x.priority, reverse=True)
+        
+        # Calculate metrics
+        total_projects = len(projects)
+        total_components = len(common_components)
+        total_conflicts = len(conflicts)
+        critical_conflicts = len([c for c in conflicts if c.severity == 'critical'])
+        
+        # Generate complexity score
+        complexity_score = self._calculate_complexity_score(projects, common_components, conflicts)
+        
+        analysis = {
+            'timestamp': datetime.now().isoformat(),
+            'metrics': {
+                'total_projects': total_projects,
+                'total_components': total_components,
+                'total_conflicts': total_conflicts,
+                'critical_conflicts': critical_conflicts,
+                'complexity_score': complexity_score
+            },
+            'recommendations': [
+                {
+                    'category': rec.category,
+                    'title': rec.title,
+                    'description': rec.description,
+                    'impact': rec.impact,
+                    'effort': rec.effort,
+                    'priority': rec.priority,
+                    'implementation_steps': rec.implementation_steps,
+                    'estimated_benefit': rec.estimated_benefit
+                }
+                for rec in all_recommendations
+            ],
+            'summary': {
+                'readiness_score': self._calculate_readiness_score(conflicts),
+                'recommendation_count': len(all_recommendations),
+                'high_priority_count': len([r for r in all_recommendations if r.priority >= 8])
+            }
+        }
+        
+        return analysis
+    
+    def _calculate_complexity_score(self, projects: Dict[str, ProjectInfo],
+                                  common_components: Dict[str, CommonComponent],
+                                  conflicts: List[DependencyConflict]) -> float:
+        """Calculate complexity score (0-100, higher is more complex)."""
+        score = 0
+        
+        # Project count factor
+        score += min(len(projects) * 2, 30)
+        
+        # Conflict factor
+        score += len(conflicts) * 3
+        
+        # Critical conflict factor
+        critical_conflicts = len([c for c in conflicts if c.severity == 'critical'])
+        score += critical_conflicts * 5
+        
+        # Technology diversity factor
+        project_types = set(p.type for p in projects.values())
+        score += len(project_types) * 2
+        
+        return min(score, 100)
+    
+    def _calculate_readiness_score(self, conflicts: List[DependencyConflict]) -> float:
+        """Calculate readiness score for splitting (0-100, higher is more ready)."""
+        if not conflicts:
+            return 100
+        
+        # Deduct points for conflicts
+        score = 100
+        score -= len(conflicts) * 5
+        score -= len([c for c in conflicts if c.severity == 'critical']) * 10
+        
+        return max(score, 0)
 
 
 class MonorepoAnalyzer:
@@ -629,6 +1094,27 @@ class MonorepoAnalyzer:
         """Generate a comprehensive analysis report."""
         self.logger.info("📊 Generating analysis report...")
         
+        # Initialize AI analyzer and visualizer
+        ai_analyzer = AIAnalyzer(self.logger)
+        visualizer = DependencyGraphVisualizer(self.logger)
+        
+        # Build dependency graph
+        graph = visualizer.build_graph(self.projects, self.common_components, self.conflicts)
+        
+        # Generate AI analysis
+        ai_analysis = ai_analyzer.generate_comprehensive_analysis(
+            self.projects, self.common_components, self.conflicts
+        )
+        
+        # Generate visualizations
+        visualization_paths = {}
+        try:
+            visualization_paths['png'] = visualizer.generate_visualization("dependency_graph.png")
+            visualization_paths['dot'] = visualizer.generate_dot_file("dependency_graph.dot")
+            visualization_paths['svg'] = visualizer.generate_svg("dependency_graph.svg")
+        except Exception as e:
+            self.logger.warning(f"Could not generate visualizations: {e}")
+        
         report = {
             'timestamp': datetime.now().isoformat(),
             'total_projects': len(self.projects),
@@ -637,7 +1123,9 @@ class MonorepoAnalyzer:
             'projects': {},
             'common_components': {},
             'dependency_conflicts': [],
-            'recommendations': []
+            'recommendations': [],
+            'ai_analysis': ai_analysis,
+            'visualizations': visualization_paths
         }
         
         # Add project details
@@ -727,6 +1215,34 @@ class MonorepoAnalyzer:
                     self.logger.info(f"    💡 {suggestion}")
         else:
             self.logger.info("✅ No dependency conflicts detected")
+        
+        # Print AI analysis
+        if 'ai_analysis' in report:
+            ai_analysis = report['ai_analysis']
+            self.logger.info("🤖 AI-POWERED ANALYSIS")
+            self.logger.info("=" * 60)
+            
+            # Print metrics
+            metrics = ai_analysis['metrics']
+            self.logger.info(f"📊 Complexity Score: {metrics['complexity_score']}/100")
+            self.logger.info(f"📊 Readiness Score: {ai_analysis['summary']['readiness_score']}/100")
+            
+            # Print high-priority recommendations
+            high_priority_recs = [r for r in ai_analysis['recommendations'] if r['priority'] >= 8]
+            if high_priority_recs:
+                self.logger.info(f"🚨 {len(high_priority_recs)} High-Priority Recommendations:")
+                for rec in high_priority_recs[:3]:  # Show top 3
+                    impact_emoji = {'critical': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}.get(rec['impact'], '⚪')
+                    self.logger.info(f"  {impact_emoji} [{rec['priority']}] {rec['title']}")
+                    self.logger.info(f"    📝 {rec['description']}")
+                    self.logger.info(f"    💡 Benefit: {rec['estimated_benefit']}")
+            
+            # Print visualization info
+            if report.get('visualizations'):
+                self.logger.info("📊 Visualizations Generated:")
+                for format_name, path in report['visualizations'].items():
+                    if path:
+                        self.logger.info(f"  • {format_name.upper()}: {path}")
         
         self.logger.info("💡 Recommendations:")
         for rec in recommendations:
@@ -1232,6 +1748,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making changes')
     parser.add_argument('--analyze-only', action='store_true', help='Only analyze the monorepo structure without splitting')
     parser.add_argument('--force', action='store_true', help='Force proceed despite dependency conflicts')
+    parser.add_argument('--visualize', action='store_true', help='Generate dependency graph visualizations')
     # Universal CLI options
     parser.add_argument('--mode', choices=['auto', 'project', 'branch'], help='Splitting mode to use')
     parser.add_argument('--branches', help='Comma-separated list of branches for branch mode')
@@ -1252,6 +1769,7 @@ def main():
             dry_run=args.dry_run,
             analyze_only=args.analyze_only,
             force=args.force,
+            visualize=args.visualize,
             mode=args.mode if args.mode else 'auto',
             branches=[b.strip() for b in args.branches.split(',')] if args.branches else None,
             manual_projects=[p.strip() for p in args.projects.split(',')] if args.projects else None,
