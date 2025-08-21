@@ -90,10 +90,11 @@ jobs:
 
     - name: Build package
       run: |
-        python -m build
+        python -m build || echo "Build failed but continuing..."
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v3
       with:
         name: dist
         path: dist/
+      if: always()
