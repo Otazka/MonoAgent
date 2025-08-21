@@ -71,6 +71,7 @@ class RepoSplitterConfig:
     github_token: str
     dry_run: bool = False
     analyze_only: bool = False
+    force: bool = False  # Force proceed despite conflicts
     auto_detect: bool = True
     manual_projects: Optional[List[str]] = None
     manual_common_paths: Optional[List[str]] = None
@@ -85,6 +86,28 @@ class RepoSplitterConfig:
     private_repos: bool = False
 
 
+@dataclass
+class DependencyConflict:
+    """Represents a dependency conflict between projects."""
+    source_project: str
+    target_project: str
+    conflict_type: str  # 'version_mismatch', 'missing_dependency', 'circular_dependency'
+    description: str
+    severity: str  # 'low', 'medium', 'high', 'critical'
+    resolution_suggestions: List[str] = field(default_factory=list)
+
+
+@dataclass
+class DependencyInfo:
+    """Detailed dependency information."""
+    name: str
+    source: str  # 'package.json', 'requirements.txt', 'pom.xml', etc.
+    project_path: str
+    version: Optional[str] = None
+    is_dev_dependency: bool = False
+    is_peer_dependency: bool = False
+
+
 class MonorepoAnalyzer:
     """AI-powered analyzer for monorepo structure detection."""
     
@@ -94,6 +117,8 @@ class MonorepoAnalyzer:
         self.projects: Dict[str, ProjectInfo] = {}
         self.common_components: Dict[str, CommonComponent] = {}
         self.file_dependencies: Dict[str, Set[str]] = defaultdict(set)
+        self.dependency_details: Dict[str, List[DependencyInfo]] = {}
+        self.conflicts: List[DependencyConflict] = []
         
     def analyze_repository_structure(self) -> Tuple[Dict[str, ProjectInfo], Dict[str, CommonComponent]]:
         """Analyze the monorepo structure to detect projects and common components."""
@@ -313,6 +338,7 @@ class MonorepoAnalyzer:
         
         with tqdm(total=total_files, desc="🔗 Analyzing dependencies", unit="file") as pbar:
             for project_name, project in self.projects.items():
+                self.dependency_details[project_name] = []
                 for file_path in project.files:
                     if file_path.endswith(('.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go')):
                         dependencies = self._extract_dependencies(file_path)
@@ -321,6 +347,9 @@ class MonorepoAnalyzer:
                 
                 # Remove duplicates
                 project.dependencies = list(set(project.dependencies))
+        
+        # Detect dependency conflicts
+        self._detect_dependency_conflicts()
     
     def _extract_dependencies(self, file_path: str) -> List[str]:
         """Extract dependencies from a source file."""
@@ -347,6 +376,254 @@ class MonorepoAnalyzer:
             self.logger.debug(f"Could not analyze dependencies for {file_path}: {e}")
         
         return dependencies
+
+    def _extract_detailed_dependencies(self, file_path: str) -> List[DependencyInfo]:
+        """Extract detailed dependency information from configuration files."""
+        dependencies = []
+        full_path = os.path.join(self.repo_path, file_path)
+        
+        try:
+            if file_path.endswith('package.json'):
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # Extract dependencies
+                for dep_type, deps in data.items():
+                    if dep_type in ['dependencies', 'devDependencies', 'peerDependencies']:
+                        for dep_name, dep_version in deps.items():
+                            dependencies.append(DependencyInfo(
+                                name=dep_name,
+                                source='package.json',
+                                project_path=os.path.dirname(file_path),
+                                version=dep_version,
+                                is_dev_dependency=(dep_type == 'devDependencies'),
+                                is_peer_dependency=(dep_type == 'peerDependencies')
+                            ))
+                            
+            elif file_path.endswith('requirements.txt'):
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            # Parse requirements.txt format
+                            if '==' in line:
+                                name, version = line.split('==', 1)
+                            elif '>=' in line:
+                                name, version = line.split('>=', 1)
+                            elif '<=' in line:
+                                name, version = line.split('<=', 1)
+                            else:
+                                name, version = line, None
+                                
+                            dependencies.append(DependencyInfo(
+                                name=name.strip(),
+                                source='requirements.txt',
+                                project_path=os.path.dirname(file_path),
+                                version=version.strip() if version else None
+                            ))
+                            
+            elif file_path.endswith('pom.xml'):
+                # Basic XML parsing for Maven dependencies
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                # Extract groupId and artifactId
+                artifact_pattern = r'<artifactId>([^<]+)</artifactId>'
+                group_pattern = r'<groupId>([^<]+)</groupId>'
+                version_pattern = r'<version>([^<]+)</version>'
+                
+                artifacts = re.findall(artifact_pattern, content)
+                groups = re.findall(group_pattern, content)
+                versions = re.findall(version_pattern, content)
+                
+                for i, artifact in enumerate(artifacts):
+                    group = groups[i] if i < len(groups) else 'unknown'
+                    version = versions[i] if i < len(versions) else None
+                    
+                    dependencies.append(DependencyInfo(
+                        name=f"{group}:{artifact}",
+                        source='pom.xml',
+                        project_path=os.path.dirname(file_path),
+                        version=version
+                    ))
+                    
+        except Exception as e:
+            self.logger.debug(f"Error reading dependency file {file_path}: {e}")
+            
+        return dependencies
+
+    def _detect_dependency_conflicts(self):
+        """Detect dependency conflicts between projects."""
+        self.logger.info("⚠️  Detecting dependency conflicts...")
+        
+        # Extract detailed dependencies from configuration files
+        for project_name, project in self.projects.items():
+            for file_path in project.files:
+                if file_path.endswith(('package.json', 'requirements.txt', 'pom.xml', 'build.gradle')):
+                    deps = self._extract_detailed_dependencies(file_path)
+                    self.dependency_details[project_name].extend(deps)
+        
+        # Detect version conflicts
+        self._detect_version_conflicts()
+        
+        # Detect missing dependencies
+        self._detect_missing_dependencies()
+        
+        # Detect circular dependencies
+        self._detect_circular_dependencies()
+        
+        # Detect shared dependencies
+        self._detect_shared_dependencies()
+
+    def _detect_version_conflicts(self):
+        """Detect version conflicts for the same dependency across projects."""
+        dependency_versions = defaultdict(dict)
+        
+        # Collect all dependency versions
+        for project_name, deps in self.dependency_details.items():
+            for dep in deps:
+                if dep.version:
+                    dependency_versions[dep.name][project_name] = dep.version
+        
+        # Check for version conflicts
+        for dep_name, versions in dependency_versions.items():
+            if len(set(versions.values())) > 1:
+                # Version conflict detected
+                conflict = DependencyConflict(
+                    source_project="multiple",
+                    target_project=dep_name,
+                    conflict_type="version_mismatch",
+                    description=f"Version conflict for '{dep_name}': {dict(versions)}",
+                    severity="high",
+                    resolution_suggestions=[
+                        f"Standardize '{dep_name}' version across all projects",
+                        f"Move '{dep_name}' to a shared dependency management system",
+                        f"Consider creating a shared library for '{dep_name}'"
+                    ]
+                )
+                self.conflicts.append(conflict)
+
+    def _detect_missing_dependencies(self):
+        """Detect dependencies that will be missing after splitting."""
+        # Check for internal project dependencies
+        for project_name, project in self.projects.items():
+            for dep in project.dependencies:
+                # Check if dependency is another project in the monorepo
+                if dep in self.projects and dep != project_name:
+                    conflict = DependencyConflict(
+                        source_project=project_name,
+                        target_project=dep,
+                        conflict_type="missing_dependency",
+                        description=f"Project '{project_name}' depends on project '{dep}' which will be separated",
+                        severity="critical",
+                        resolution_suggestions=[
+                            f"Move shared code from '{dep}' to a common component",
+                            f"Create a shared library for '{dep}'",
+                            f"Update '{project_name}' to use external dependency for '{dep}'",
+                            f"Keep '{project_name}' and '{dep}' in the same repository"
+                        ]
+                    )
+                    self.conflicts.append(conflict)
+
+    def _detect_circular_dependencies(self):
+        """Detect circular dependencies between projects."""
+        # Build dependency graph
+        graph = defaultdict(set)
+        for project_name, project in self.projects.items():
+            for dep in project.dependencies:
+                if dep in self.projects:
+                    graph[project_name].add(dep)
+        
+        # Detect cycles using DFS
+        visited = set()
+        rec_stack = set()
+        
+        def has_cycle(node):
+            visited.add(node)
+            rec_stack.add(node)
+            
+            for neighbor in graph[node]:
+                if neighbor not in visited:
+                    if has_cycle(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+            
+            rec_stack.remove(node)
+            return False
+        
+        # Check for cycles
+        for project_name in self.projects:
+            if project_name not in visited:
+                if has_cycle(project_name):
+                    # Find the cycle
+                    cycle = self._find_cycle(graph, project_name)
+                    conflict = DependencyConflict(
+                        source_project="circular",
+                        target_project="->".join(cycle),
+                        conflict_type="circular_dependency",
+                        description=f"Circular dependency detected: {' -> '.join(cycle)}",
+                        severity="critical",
+                        resolution_suggestions=[
+                            "Extract shared functionality to a common component",
+                            "Refactor to break the circular dependency",
+                            "Use dependency injection or interfaces",
+                            "Consider merging the circularly dependent projects"
+                        ]
+                    )
+                    self.conflicts.append(conflict)
+
+    def _find_cycle(self, graph, start_node):
+        """Find a cycle in the dependency graph."""
+        visited = set()
+        path = []
+        
+        def dfs(node):
+            if node in path:
+                cycle_start = path.index(node)
+                return path[cycle_start:] + [node]
+            
+            if node in visited:
+                return None
+                
+            visited.add(node)
+            path.append(node)
+            
+            for neighbor in graph[node]:
+                result = dfs(neighbor)
+                if result:
+                    return result
+            
+            path.pop()
+            return None
+        
+        return dfs(start_node) or []
+
+    def _detect_shared_dependencies(self):
+        """Detect dependencies that are shared across multiple projects."""
+        shared_deps = defaultdict(set)
+        
+        # Find shared dependencies
+        for project_name, deps in self.dependency_details.items():
+            for dep in deps:
+                shared_deps[dep.name].add(project_name)
+        
+        # Report shared dependencies
+        for dep_name, projects in shared_deps.items():
+            if len(projects) > 1:
+                conflict = DependencyConflict(
+                    source_project="shared",
+                    target_project=dep_name,
+                    conflict_type="shared_dependency",
+                    description=f"'{dep_name}' is used by {len(projects)} projects: {', '.join(projects)}",
+                    severity="medium",
+                    resolution_suggestions=[
+                        f"Consider creating a shared library for '{dep_name}'",
+                        f"Move '{dep_name}' to a common component",
+                        f"Use a monorepo package manager (Lerna, Nx, Rush) for '{dep_name}'"
+                    ]
+                )
+                self.conflicts.append(conflict)
     
     def _generate_analysis_report(self):
         """Generate a comprehensive analysis report."""
@@ -356,8 +633,10 @@ class MonorepoAnalyzer:
             'timestamp': datetime.now().isoformat(),
             'total_projects': len(self.projects),
             'total_common_components': len(self.common_components),
+            'total_conflicts': len(self.conflicts),
             'projects': {},
             'common_components': {},
+            'dependency_conflicts': [],
             'recommendations': []
         }
         
@@ -378,6 +657,17 @@ class MonorepoAnalyzer:
                 'usage_count': component.usage_count
             }
         
+        # Add dependency conflicts
+        for conflict in self.conflicts:
+            report['dependency_conflicts'].append({
+                'source_project': conflict.source_project,
+                'target_project': conflict.target_project,
+                'conflict_type': conflict.conflict_type,
+                'description': conflict.description,
+                'severity': conflict.severity,
+                'resolution_suggestions': conflict.resolution_suggestions
+            })
+        
         # Generate recommendations
         recommendations = []
         
@@ -389,6 +679,16 @@ class MonorepoAnalyzer:
         
         if len(self.projects) > 5:
             recommendations.append("Consider creating a shared library for common utilities")
+        
+        # Add conflict-based recommendations
+        critical_conflicts = [c for c in self.conflicts if c.severity == 'critical']
+        high_conflicts = [c for c in self.conflicts if c.severity == 'high']
+        
+        if critical_conflicts:
+            recommendations.append(f"⚠️  Resolve {len(critical_conflicts)} critical dependency conflicts before splitting")
+        
+        if high_conflicts:
+            recommendations.append(f"⚠️  Address {len(high_conflicts)} high-severity dependency conflicts")
         
         report['recommendations'] = recommendations
         
@@ -410,6 +710,23 @@ class MonorepoAnalyzer:
         self.logger.info(f"🔧 Detected {len(self.common_components)} common components:")
         for name, component in self.common_components.items():
             self.logger.info(f"  • {name} at {component.path}")
+        
+        # Print dependency conflicts
+        if self.conflicts:
+            self.logger.info(f"⚠️  Detected {len(self.conflicts)} dependency conflicts:")
+            for conflict in self.conflicts:
+                severity_emoji = {
+                    'low': '🟢',
+                    'medium': '🟡', 
+                    'high': '🟠',
+                    'critical': '🔴'
+                }.get(conflict.severity, '⚪')
+                
+                self.logger.info(f"  {severity_emoji} {conflict.conflict_type.upper()}: {conflict.description}")
+                for suggestion in conflict.resolution_suggestions[:2]:  # Show first 2 suggestions
+                    self.logger.info(f"    💡 {suggestion}")
+        else:
+            self.logger.info("✅ No dependency conflicts detected")
         
         self.logger.info("💡 Recommendations:")
         for rec in recommendations:
@@ -571,6 +888,17 @@ class RepoSplitter:
         
         # Perform analysis
         projects, common_components = self.analyzer.analyze_repository_structure()
+        
+        # Check for critical conflicts
+        critical_conflicts = [c for c in self.analyzer.conflicts if c.severity == 'critical']
+        if critical_conflicts and not self.config.dry_run:
+            self.logger.warning(f"⚠️  Found {len(critical_conflicts)} critical dependency conflicts!")
+            self.logger.warning("Consider resolving these conflicts before proceeding with the split.")
+            
+            # Ask for confirmation in non-dry-run mode
+            if not self.config.force:
+                self.logger.error("❌ Aborting due to critical dependency conflicts. Use --force to proceed anyway.")
+                raise ValueError(f"Critical dependency conflicts detected: {len(critical_conflicts)} conflicts")
         
         return projects, common_components
     
@@ -903,6 +1231,7 @@ def main():
     parser = argparse.ArgumentParser(description="Advanced GitHub Monorepo Splitter AI Agent")
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making changes')
     parser.add_argument('--analyze-only', action='store_true', help='Only analyze the monorepo structure without splitting')
+    parser.add_argument('--force', action='store_true', help='Force proceed despite dependency conflicts')
     # Universal CLI options
     parser.add_argument('--mode', choices=['auto', 'project', 'branch'], help='Splitting mode to use')
     parser.add_argument('--branches', help='Comma-separated list of branches for branch mode')
@@ -922,6 +1251,7 @@ def main():
             github_token='',
             dry_run=args.dry_run,
             analyze_only=args.analyze_only,
+            force=args.force,
             mode=args.mode if args.mode else 'auto',
             branches=[b.strip() for b in args.branches.split(',')] if args.branches else None,
             manual_projects=[p.strip() for p in args.projects.split(',')] if args.projects else None,

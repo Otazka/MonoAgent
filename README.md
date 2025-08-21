@@ -14,6 +14,7 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **🛡️ Dry-Run Mode**: Preview changes before applying them
 - **🎨 Customizable**: Configurable repository naming, privacy settings, and branch defaults
 - **📈 Progress Tracking**: Real-time progress bars for all large operations
+- **⚠️ Dependency Conflict Detection**: Advanced analysis to identify and resolve dependency conflicts
 
 ## 🚀 Quick Start
 
@@ -98,6 +99,7 @@ Options:
   --name-template-lib TEXT   Template for library repository names
   --dry-run                  Preview changes without applying
   --analyze-only             Only analyze, don't split
+  --force                    Force proceed despite dependency conflicts
 ```
 
 ## 🔧 How It Works
@@ -122,6 +124,17 @@ The tool provides real-time progress bars for all major operations:
 - **📦 Project Extraction**: Shows step-by-step progress of git operations
 - **🌿 Branch Extraction**: Tracks branch-specific operations
 - **🚀 Overall Progress**: Shows overall repository creation progress
+
+### Dependency Conflict Detection
+
+The tool intelligently detects and reports dependency conflicts:
+
+- **🔴 Version Conflicts**: Identifies mismatched dependency versions across projects
+- **🔴 Missing Dependencies**: Detects internal project dependencies that will be missing after splitting
+- **🔴 Circular Dependencies**: Finds circular dependency chains between projects
+- **🟡 Shared Dependencies**: Identifies dependencies used by multiple projects
+- **💡 Resolution Suggestions**: Provides actionable recommendations for each conflict type
+- **⚡ Force Mode**: Option to proceed despite conflicts using `--force` flag
 
 ### Splitting Modes
 
@@ -185,6 +198,7 @@ The project includes GitHub Actions workflows for:
 🏗️  Analyzing directory structure: 100%|██████████| 1500/1500 [00:05<00:00, 300.00 files/s]
 🔧 Detecting common components: 100%|██████████| 1500/1500 [00:02<00:00, 750.00 files/s]
 🔗 Analyzing dependencies: 100%|██████████| 200/200 [00:10<00:00, 20.00 files/s]
+⚠️  Detecting dependency conflicts: 100%|██████████| 200/200 [00:05<00:00, 40.00 files/s]
 📊 Generating analysis report...
 
 📋 MONOREPO ANALYSIS SUMMARY
@@ -194,9 +208,21 @@ The project includes GitHub Actions workflows for:
   • backend (python) at apps/backend
 🔧 Detected 1 common components:
   • utils at shared/utils
+⚠️  Detected 3 dependency conflicts:
+  🔴 VERSION_MISMATCH: Version conflict for 'react': {'frontend': '^18.0.0', 'backend': '^17.0.0'}
+    💡 Standardize 'react' version across all projects
+    💡 Move 'react' to a shared dependency management system
+  🔴 MISSING_DEPENDENCY: Project 'frontend' depends on project 'backend' which will be separated
+    💡 Move shared code from 'backend' to a common component
+    💡 Create a shared library for 'backend'
+  🟡 SHARED_DEPENDENCY: 'lodash' is used by 2 projects: frontend, backend
+    💡 Consider creating a shared library for 'lodash'
+    💡 Move 'lodash' to a common component
 💡 Recommendations:
   • Split 2 detected projects into separate repositories
   • Extract 1 common components into shared libraries
+  ⚠️  Resolve 2 critical dependency conflicts before splitting
+  ⚠️  Address 1 high-severity dependency conflicts
 
 🚀 Creating repositories: 100%|██████████| 3/3 [01:30<00:00, 30.00s/repo]
 📝 Creating frontend-app: 100%|██████████| 1/1 [00:05<00:00, 5.00s/attempt]
