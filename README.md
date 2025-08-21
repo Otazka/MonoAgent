@@ -17,6 +17,7 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **⚠️ Dependency Conflict Detection**: Advanced analysis to identify and resolve dependency conflicts
 - **🤖 AI-Powered Analysis**: Intelligent recommendations for architecture, performance, and security
 - **📊 Dependency Graph Visualization**: Beautiful visual representations of project relationships
+- **🌐 Multi-Provider Support (beta)**: Create repositories on GitHub, GitLab, Bitbucket, Azure DevOps
 
 ## 🚀 Quick Start
 
@@ -103,6 +104,7 @@ Options:
   --analyze-only             Only analyze, don't split
   --force                    Force proceed despite dependency conflicts
   --visualize                Generate dependency graph visualizations
+  --provider TEXT            Target provider: github | gitlab | bitbucket | azure
 
 ### Usage Examples
 

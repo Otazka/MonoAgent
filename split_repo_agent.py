@@ -95,6 +95,11 @@ class RepoSplitterConfig:
     # GitHub API quota management
     rate_limit_min_remaining: int = 50
     abuse_retry_after_default: int = 60
+    # Multi-provider support
+    provider: str = "github"  # github | gitlab | bitbucket | azure
+    gitlab_host: str = "https://gitlab.com"  # Override for self-hosted
+    provider_username: Optional[str] = None   # Used for Bitbucket/Azure (PAT basic auth username)
+    azure_project: Optional[str] = None       # Required for Azure DevOps repo creation
 
 
 @dataclass
@@ -1288,6 +1293,74 @@ class RepoSplitter:
         if self.temp_dir and os.path.exists(self.temp_dir):
             self.logger.info(f"Cleaning up temporary directory: {self.temp_dir}")
             shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    # ------------------
+    # Preflight checks
+    # ------------------
+    def preflight_checks(self) -> bool:
+        """Validate environment, binaries, and provider token reachability."""
+        ok = True
+        # git
+        if shutil.which('git') is None:
+            self.logger.error("git not found in PATH. Install git and retry.")
+            ok = False
+        # git-filter-repo
+        if shutil.which('git-filter-repo') is None:
+            self.logger.warning("git-filter-repo not found. Install for path/history filtering.")
+        # graphviz/dot (optional)
+        if self.config.visualize and shutil.which('dot') is None:
+            self.logger.warning("Graphviz 'dot' not found. Visualizations (PNG/SVG) will be skipped.")
+
+        # SOURCE_REPO_URL reachability
+        try:
+            self.run_git_command(['git', 'ls-remote', '--heads', self.config.source_repo_url], check=False)
+        except Exception:
+            self.logger.warning("Could not verify SOURCE_REPO_URL reachability. Ensure the URL and SSH agent are configured.")
+
+        # Provider token minimal check
+        provider = (self.config.provider or 'github').lower()
+        try:
+            if provider == 'github':
+                self._rate_limit_guard()
+                _ = self.github.get_user().login
+            elif provider == 'gitlab':
+                import requests
+                base = (self.config.gitlab_host or 'https://gitlab.com').rstrip('/')
+                resp = requests.get(f"{base}/api/v4/user", headers={"PRIVATE-TOKEN": self.config.github_token}, timeout=10)
+                if resp.status_code != 200:
+                    self.logger.error(f"GitLab token check failed: {resp.status_code} {resp.text}")
+                    ok = False
+            elif provider == 'bitbucket':
+                import requests
+                user = self.config.provider_username or self.config.org
+                auth = (user, self.config.github_token)
+                resp = requests.get("https://api.bitbucket.org/2.0/user", auth=auth, timeout=10)
+                if resp.status_code != 200:
+                    self.logger.error(f"Bitbucket token check failed: {resp.status_code} {resp.text}")
+                    ok = False
+            elif provider == 'azure':
+                import requests, base64
+                org = self.config.org
+                project = self.config.azure_project
+                if not project:
+                    self.logger.error("azure_project must be set for Azure DevOps provider")
+                    ok = False
+                token = base64.b64encode(f":{self.config.github_token}".encode()).decode()
+                headers = {"Authorization": f"Basic {token}"}
+                url = f"https://dev.azure.com/{org}/_apis/projects?api-version=7.1-preview.4"
+                resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    self.logger.error(f"Azure DevOps PAT check failed: {resp.status_code} {resp.text}")
+                    ok = False
+        except Exception as e:
+            self.logger.error(f"Provider preflight check failed: {e}")
+            ok = False
+
+        if ok:
+            self.logger.info("✅ Preflight checks passed")
+        else:
+            self.logger.error("❌ Preflight checks failed. See messages above.")
+        return ok
     
     def load_config(self) -> RepoSplitterConfig:
         """Load configuration from environment variables."""
@@ -1546,8 +1619,30 @@ class RepoSplitter:
         
         return projects, common_components
     
+    def _create_repo_provider_agnostic(self, repo_name: str, description: str = "") -> Optional[str]:
+        """Create a new repository across supported providers and return clone URL."""
+        provider = (self.config.provider or 'github').lower()
+        if provider == 'github':
+            return self._create_repo_github(repo_name, description)
+        elif provider == 'gitlab':
+            return self._create_repo_gitlab(repo_name, description)
+        elif provider == 'bitbucket':
+            return self._create_repo_bitbucket(repo_name, description)
+        elif provider == 'azure':
+            return self._create_repo_azure(repo_name, description)
+        else:
+            self.logger.error(f"Unsupported provider: {provider}")
+            return None
+
     def create_github_repo(self, repo_name: str, description: str = "") -> Optional[str]:
-        """Create a new GitHub repository via API."""
+        """Backward compatibility shim: still called in code paths; now delegates to provider-agnostic."""
+        return self._create_repo_provider_agnostic(repo_name, description)
+
+    # ----------------
+    # Provider: GitHub
+    # ----------------
+    def _create_repo_github(self, repo_name: str, description: str = "") -> Optional[str]:
+        """Create repo in GitHub and return clone URL."""
         # Sanitize name early for consistent logs
         repo_name = self._sanitize_repo_name(repo_name)
         if self.config.dry_run:
@@ -1602,6 +1697,145 @@ class RepoSplitter:
                     pbar.update(1)
         
         self.logger.error(f"Failed to create repository {repo_name}: {last_exc}")
+        return None
+
+    # ---------------
+    # Provider: GitLab
+    # ---------------
+    def _create_repo_gitlab(self, repo_name: str, description: str = "") -> Optional[str]:
+        """Create repo in GitLab and return clone URL."""
+        try:
+            import requests
+        except Exception:
+            self.logger.error("Requests library not available for GitLab operations")
+            return None
+        base = (self.config.gitlab_host or 'https://gitlab.com').rstrip('/')
+        token = self.config.github_token  # reuse token env for simplicity
+        headers = {"PRIVATE-TOKEN": token}
+        data = {
+            "name": self._sanitize_repo_name(repo_name),
+            "path": self._sanitize_repo_name(repo_name),
+            "visibility": "private" if self.config.private_repos else "public",
+            "description": description,
+        }
+        if self.config.dry_run:
+            self.logger.info(f"[DRY RUN] Would create GitLab project: {data['name']}")
+            return f"{base}/{self.config.org}/{data['path']}.git"
+        try:
+            self._rate_limit_guard()
+            resp = requests.post(f"{base}/api/v4/projects", headers=headers, data=data, timeout=30)
+            if resp.status_code in (200, 201):
+                info = resp.json()
+                clone_url = info.get('ssh_url_to_repo') or info.get('http_url_to_repo')
+                self.logger.info(f"Created GitLab project: {data['name']}")
+                self.created_repos.append(data['name'])
+                return clone_url
+            elif resp.status_code == 409:
+                self.logger.warning("GitLab project already exists; continuing")
+                return f"{base}/{self.config.org}/{data['path']}.git"
+            else:
+                self.logger.error(f"GitLab API error {resp.status_code}: {resp.text}")
+        except Exception as e:
+            self.logger.error(f"GitLab project creation failed: {e}")
+        return None
+
+    # -----------------
+    # Provider: Bitbucket
+    # -----------------
+    def _create_repo_bitbucket(self, repo_name: str, description: str = "") -> Optional[str]:
+        """Create repo in Bitbucket Cloud and return clone URL."""
+        try:
+            import requests
+        except Exception:
+            self.logger.error("Requests library not available for Bitbucket operations")
+            return None
+        base = "https://api.bitbucket.org/2.0"
+        user = self.config.provider_username or self.config.org
+        token = self.config.github_token
+        auth = (user, token)
+        data = {
+            "scm": "git",
+            "is_private": bool(self.config.private_repos),
+            "description": description,
+        }
+        name = self._sanitize_repo_name(repo_name)
+        if self.config.dry_run:
+            self.logger.info(f"[DRY RUN] Would create Bitbucket repo: {name}")
+            return f"git@bitbucket.org:{user}/{name}.git"
+        try:
+            self._rate_limit_guard()
+            resp = requests.post(f"{base}/repositories/{user}/{name}", auth=auth, json=data, timeout=30)
+            if resp.status_code in (200, 201):
+                info = resp.json()
+                links = info.get('links', {})
+                clone = links.get('clone', [])
+                ssh = next((c['href'] for c in clone if c.get('name') == 'ssh'), None)
+                https = next((c['href'] for c in clone if c.get('name') == 'https'), None)
+                clone_url = ssh or https
+                self.logger.info(f"Created Bitbucket repo: {name}")
+                self.created_repos.append(name)
+                return clone_url
+            elif resp.status_code == 400 and 'already exists' in resp.text.lower():
+                self.logger.warning("Bitbucket repo already exists; continuing")
+                return f"git@bitbucket.org:{user}/{name}.git"
+            else:
+                self.logger.error(f"Bitbucket API error {resp.status_code}: {resp.text}")
+        except Exception as e:
+            self.logger.error(f"Bitbucket repo creation failed: {e}")
+        return None
+
+    # -----------------
+    # Provider: Azure DevOps
+    # -----------------
+    def _create_repo_azure(self, repo_name: str, description: str = "") -> Optional[str]:
+        """Create repo in Azure DevOps and return clone URL.
+
+        Requires:
+          - ORG as Azure DevOps organization
+          - azure_project in config
+          - provider_username and github_token as PAT credentials
+        """
+        try:
+            import requests
+            import base64
+        except Exception:
+            self.logger.error("Requests library not available for Azure operations")
+            return None
+        org = self.config.org
+        project = self.config.azure_project
+        if not project:
+            self.logger.error("azure_project is required for Azure DevOps provider")
+            return None
+        user = self.config.provider_username or ""
+        pat = self.config.github_token
+        token = base64.b64encode(f":{pat}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {token}",
+            "Content-Type": "application/json"
+        }
+        name = self._sanitize_repo_name(repo_name)
+        payload = {"name": name}
+        if self.config.dry_run:
+            self.logger.info(f"[DRY RUN] Would create Azure DevOps repo: {name}")
+            return f"https://dev.azure.com/{org}/{project}/_git/{name}"
+        try:
+            self._rate_limit_guard()
+            url = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories?api-version=7.1-preview.1"
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            if resp.status_code in (200, 201):
+                info = resp.json()
+                clone_url = next((l['href'] for l in info.get('remoteUrl', []) if l.get('name') == 'ssh'), None)
+                clone_url = clone_url or info.get('sshUrl') or info.get('remoteUrl')
+                self.logger.info(f"Created Azure DevOps repo: {name}")
+                self.created_repos.append(name)
+                return clone_url
+            elif resp.status_code == 409:
+                self.logger.warning("Azure repo already exists; continuing")
+                return f"https://dev.azure.com/{org}/{project}/_git/{name}"
+            else:
+                self.logger.error(f"Azure API error {resp.status_code}: {resp.text}")
+        except Exception as e:
+            self.logger.error(f"Azure DevOps repo creation failed: {e}")
         return None
     
     def extract_project_to_repo(self, project: ProjectInfo, repo_name: str, repo_url: str):
@@ -1793,7 +2027,7 @@ class RepoSplitter:
                         repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project.name))
                         description = f"{project.type.title()} application extracted from monorepo"
                         self.logger.info(f"Processing project: {project.name}")
-                        repo_url = self.create_github_repo(repo_name, description)
+                        repo_url = self._create_repo_provider_agnostic(repo_name, description)
                         if repo_url:
                             self.extract_project_to_repo(project, repo_name, repo_url)
                             self.logger.info(f"Repository URL: {repo_url}")
@@ -1806,7 +2040,7 @@ class RepoSplitter:
                         repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=component.name))
                         description = "Common library component extracted from monorepo"
                         self.logger.info(f"Processing common component: {component.name}")
-                        repo_url = self.create_github_repo(repo_name, description)
+                        repo_url = self._create_repo_provider_agnostic(repo_name, description)
                         if repo_url:
                             self.extract_common_component_to_repo(component, repo_name, repo_url)
                             self.logger.info(f"Repository URL: {repo_url}")
@@ -1832,7 +2066,7 @@ class RepoSplitter:
                         repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project_name))
                         description = "Application extracted from monorepo"
                         self.logger.info(f"Processing project: {project.name}")
-                        repo_url = self.create_github_repo(repo_name, description)
+                        repo_url = self._create_repo_provider_agnostic(repo_name, description)
                         if repo_url:
                             self.extract_project_to_repo(project, repo_name, repo_url)
                             self.logger.info(f"Repository URL: {repo_url}")
@@ -1901,6 +2135,7 @@ def main():
     parser.add_argument('--analyze-only', action='store_true', help='Only analyze the monorepo structure without splitting')
     parser.add_argument('--force', action='store_true', help='Force proceed despite dependency conflicts')
     parser.add_argument('--visualize', action='store_true', help='Generate dependency graph visualizations')
+    parser.add_argument('--preflight', action='store_true', help='Run preflight checks and exit')
     # Universal CLI options
     parser.add_argument('--mode', choices=['auto', 'project', 'branch'], help='Splitting mode to use')
     parser.add_argument('--branches', help='Comma-separated list of branches for branch mode')
@@ -1933,6 +2168,9 @@ def main():
         )
         
         with RepoSplitter(config) as splitter:
+            if args.preflight:
+                ok = splitter.preflight_checks()
+                sys.exit(0 if ok else 1)
             splitter.split_repositories()
             
     except KeyboardInterrupt:
