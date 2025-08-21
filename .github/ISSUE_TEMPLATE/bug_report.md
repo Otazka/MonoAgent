@@ -1,5 +1,28 @@
 ---
 name: Bug report
+about: Create a report to help us improve
+labels: bug
+---
+
+### Describe the bug
+A clear and concise description of what the bug is.
+
+### To Reproduce
+Steps to reproduce the behavior:
+1. Command run (please include flags)
+2. Environment (OS, Python version)
+3. Provider (github/gitlab/bitbucket/azure)
+
+### Expected behavior
+
+### Logs / Screenshots
+Attach relevant log excerpts (redact tokens) and screenshots if applicable.
+
+### Additional context
+Add any other context about the problem here.
+
+---
+name: Bug report
 about: Create a report to help us improve the monorepo splitter
 title: "[Bug]: "
 labels: bug

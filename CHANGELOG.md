@@ -2,17 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## v1.0.0 - 2025-08-21
+## [1.0.0-beta] - 2025-08-21
 
 ### Added
-- Universal modes: `auto`, `project`, `branch` with CLI and env support
-- Repo privacy, default branch, and naming templates
-- Safe git operations using `cwd` (no global chdir)
-- GitHub API retries and repo name sanitization
-- Updated README and env.example for universal usage
-- Issue templates and funding configuration
-- MIT License
+- AI-powered analysis: dependency conflict detection (version/missing/circular/shared), actionable recommendations, complexity/readiness scores.
+- Dependency graph visualization (PNG/DOT/SVG) with conflict highlighting.
+- Universal splitting modes: `auto`, `project`, `branch`.
+- Multi-provider (beta): GitHub, GitLab, Bitbucket Cloud, Azure DevOps.
+- Preflight checks for binaries (git, git-filter-repo, graphviz), repo reachability, and provider token validation.
+- Rate limit guard and abuse backoff for GitHub API calls.
+- `package.json` migration when extracting Node.js projects/components.
+- Dockerfile for containerized execution.
+- Comprehensive test suite (67 tests) and CI workflow.
+- Troubleshooting guide and Golden Path quickstart.
 
-### Fixed
-- Force update script alignment with new config and defaults
-- Robust path/branch validation and error handling
+### Changed
+- Standardized and more actionable error messages in configuration load and workflows.
+
+### Documentation
+- Provider-specific env templates and Docker usage.
+- Badges and improved Quick Start.
+
+[1.0.0-beta]: https://github.com/yourusername/github-monorepo-splitter/releases/tag/v1.0.0-beta
