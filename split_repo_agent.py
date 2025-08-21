@@ -73,6 +73,14 @@ class RepoSplitterConfig:
     manual_projects: Optional[List[str]] = None
     manual_common_paths: Optional[List[str]] = None
     exclude_patterns: Optional[List[str]] = None
+    # New universal options
+    mode: str = "auto"  # auto | project | branch
+    branches: Optional[List[str]] = None
+    common_path: Optional[str] = None
+    repo_name_template_app: str = "{name}-app"
+    repo_name_template_lib: str = "{name}-lib"
+    default_branch: str = "main"
+    private_repos: bool = False
 
 
 class MonorepoAnalyzer:
@@ -422,6 +430,16 @@ class RepoSplitter:
         """Load configuration from environment variables."""
         load_dotenv()
         
+        # Load from environment first
+        env_mode = os.getenv('MODE', 'auto').strip().lower()
+        env_branches = os.getenv('BRANCHES')
+        env_projects = os.getenv('PROJECTS')
+        env_common_path = os.getenv('COMMON_PATH')
+        env_private = os.getenv('PRIVATE_REPOS', 'false').lower() == 'true'
+        env_default_branch = os.getenv('DEFAULT_BRANCH', 'main')
+        env_tmpl_app = os.getenv('REPO_NAME_TEMPLATE_APP', '{name}-app')
+        env_tmpl_lib = os.getenv('REPO_NAME_TEMPLATE_LIB', '{name}-lib')
+
         config = RepoSplitterConfig(
             source_repo_url=os.getenv('SOURCE_REPO_URL', ''),
             org=os.getenv('ORG', ''),
@@ -429,9 +447,18 @@ class RepoSplitter:
             dry_run=self.config.dry_run,
             analyze_only=self.config.analyze_only,
             auto_detect=os.getenv('AUTO_DETECT', 'true').lower() == 'true',
-            manual_projects=os.getenv('MANUAL_PROJECTS', '').split(',') if os.getenv('MANUAL_PROJECTS') else None,
+            manual_projects=(os.getenv('MANUAL_PROJECTS', '').split(',') if os.getenv('MANUAL_PROJECTS') else (
+                [p.strip() for p in env_projects.split(',')] if env_projects else None
+            )),
             manual_common_paths=os.getenv('MANUAL_COMMON_PATHS', '').split(',') if os.getenv('MANUAL_COMMON_PATHS') else None,
-            exclude_patterns=os.getenv('EXCLUDE_PATTERNS', '').split(',') if os.getenv('EXCLUDE_PATTERNS') else None
+            exclude_patterns=os.getenv('EXCLUDE_PATTERNS', '').split(',') if os.getenv('EXCLUDE_PATTERNS') else None,
+            mode=env_mode,
+            branches=([b.strip() for b in env_branches.split(',')] if env_branches else None),
+            common_path=(env_common_path.strip() if env_common_path else None),
+            repo_name_template_app=env_tmpl_app,
+            repo_name_template_lib=env_tmpl_lib,
+            default_branch=env_default_branch,
+            private_repos=env_private
         )
         
         # Validate required fields
@@ -442,7 +469,27 @@ class RepoSplitter:
         if not config.github_token:
             raise ValueError("GITHUB_TOKEN is required")
         
-        self.logger.info(f"Configuration loaded: org={config.org}, auto_detect={config.auto_detect}")
+        # CLI overrides (self.config may carry explicit flags)
+        if getattr(self.config, 'mode', None):
+            config.mode = self.config.mode
+        if getattr(self.config, 'branches', None):
+            config.branches = self.config.branches
+        if getattr(self.config, 'manual_projects', None):
+            config.manual_projects = self.config.manual_projects
+        if getattr(self.config, 'common_path', None):
+            config.common_path = self.config.common_path
+        if getattr(self.config, 'repo_name_template_app', None):
+            config.repo_name_template_app = self.config.repo_name_template_app
+        if getattr(self.config, 'repo_name_template_lib', None):
+            config.repo_name_template_lib = self.config.repo_name_template_lib
+        if getattr(self.config, 'default_branch', None):
+            config.default_branch = self.config.default_branch
+        if getattr(self.config, 'private_repos', None) is not None:
+            config.private_repos = self.config.private_repos
+
+        self.logger.info(
+            f"Configuration loaded: org={config.org}, mode={config.mode}, auto_detect={config.auto_detect}"
+        )
         return config
     
     def run_git_command(self, command: List[str], cwd: str = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -508,12 +555,12 @@ class RepoSplitter:
             
             # Create new repository
             if '/' in self.config.org:
-                # Organization
+                # Organization (note: org names typically have no '/')
                 org = self.github.get_organization(self.config.org)
                 repo = org.create_repo(
                     name=repo_name,
                     description=description,
-                    private=False,
+                    private=self.config.private_repos,
                     auto_init=False
                 )
             else:
@@ -522,7 +569,7 @@ class RepoSplitter:
                 repo = user.create_repo(
                     name=repo_name,
                     description=description,
-                    private=False,
+                    private=self.config.private_repos,
                     auto_init=False
                 )
             
@@ -561,8 +608,10 @@ class RepoSplitter:
             # Add new remote
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
             
+            # Ensure default branch name
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
             # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
             
             self.logger.info(f"Successfully extracted project '{project.name}' to '{repo_name}'")
     
@@ -593,56 +642,135 @@ class RepoSplitter:
             # Add new remote
             self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
             
+            # Ensure default branch name
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
             # Push to the new repository
-            self.run_git_command(['git', 'push', '-u', 'origin', 'main'])
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
             
             self.logger.info(f"Successfully extracted common component '{component.name}' to '{repo_name}'")
+
+    def extract_branch_to_repo(self, branch_name: str, repo_name: str, repo_url: str):
+        """Extract a full branch to its own repository preserving history."""
+        branch_repo_path = os.path.join(self.temp_dir, f"branch_{branch_name}")
+        self.logger.info(f"Extracting branch '{branch_name}' to repository '{repo_name}'")
+        if not self.config.dry_run:
+            # Clone the mirror repo to working copy
+            self.run_git_command(['git', 'clone', self.source_repo_path, branch_repo_path])
+            os.chdir(branch_repo_path)
+            # Checkout target branch (create local tracking)
+            # Try both local and origin refs
+            try:
+                self.run_git_command(['git', 'checkout', branch_name])
+            except Exception:
+                self.run_git_command(['git', 'checkout', f'origin/{branch_name}'])
+                self.run_git_command(['git', 'branch', branch_name, f'origin/{branch_name}'])
+                self.run_git_command(['git', 'checkout', branch_name])
+            # Rename to default branch if needed
+            self.run_git_command(['git', 'branch', '-M', self.config.default_branch])
+            # Remove and add new remote
+            self.run_git_command(['git', 'remote', 'remove', 'origin'])
+            self.run_git_command(['git', 'remote', 'add', 'origin', repo_url])
+            # Push
+            self.run_git_command(['git', 'push', '-u', 'origin', self.config.default_branch])
+            self.logger.info(f"Successfully extracted branch '{branch_name}' to '{repo_name}'")
     
     def split_repositories(self):
         """Main method to split the monorepo into multiple repositories."""
         try:
             # Load configuration
             self.config = self.load_config()
-            
-            # Analyze monorepo structure
-            projects, common_components = self.analyze_monorepo()
-            
-            if self.config.analyze_only:
-                self.logger.info("Analysis complete. Use --dry-run to see what would be created.")
-                return
-            
-            # Process projects
-            for project_name, project in projects.items():
-                repo_name = f"{project.name}-app"
-                description = f"{project.type.title()} application extracted from monorepo"
-                
-                self.logger.info(f"Processing project: {project.name}")
-                
-                # Create GitHub repository
-                repo_url = self.create_github_repo(repo_name, description)
-                if repo_url:
-                    # Extract project to new repository
-                    self.extract_project_to_repo(project, repo_name, repo_url)
-                    self.logger.info(f"Repository URL: {repo_url}")
-                else:
-                    self.logger.error(f"Failed to create repository for project: {project.name}")
-            
-            # Process common components
-            for component_name, component in common_components.items():
-                repo_name = f"{component.name}-lib"
-                description = f"Common library component extracted from monorepo"
-                
-                self.logger.info(f"Processing common component: {component.name}")
-                
-                # Create GitHub repository
-                repo_url = self.create_github_repo(repo_name, description)
-                if repo_url:
-                    # Extract common component
-                    self.extract_common_component_to_repo(component, repo_name, repo_url)
-                    self.logger.info(f"Repository URL: {repo_url}")
-                else:
-                    self.logger.error(f"Failed to create repository for common component: {component.name}")
-            
+
+            mode = (self.config.mode or 'auto').lower()
+            if mode not in {'auto', 'project', 'branch'}:
+                raise ValueError("MODE must be one of: auto, project, branch")
+
+            if mode == 'auto':
+                # Analyze monorepo structure
+                projects, common_components = self.analyze_monorepo()
+
+                if self.config.analyze_only:
+                    self.logger.info("Analysis complete. Use --dry-run to see what would be created.")
+                    return
+
+                # Process projects
+                for project_name, project in projects.items():
+                    repo_name = self.config.repo_name_template_app.format(name=project.name)
+                    description = f"{project.type.title()} application extracted from monorepo"
+                    self.logger.info(f"Processing project: {project.name}")
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        self.extract_project_to_repo(project, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for project: {project.name}")
+
+                # Process common components
+                for component_name, component in common_components.items():
+                    repo_name = self.config.repo_name_template_lib.format(name=component.name)
+                    description = "Common library component extracted from monorepo"
+                    self.logger.info(f"Processing common component: {component.name}")
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        self.extract_common_component_to_repo(component, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for common component: {component.name}")
+
+            elif mode == 'project':
+                # Project mode: use explicitly provided projects and optional common_path
+                self.clone_source_repo()
+                projects_list = self.config.manual_projects or []
+                if not projects_list:
+                    raise ValueError("PROJECTS (or MANUAL_PROJECTS) must be provided in project mode")
+                for project_path in projects_list:
+                    project_path = project_path.strip()
+                    if not project_path:
+                        continue
+                    project_name = os.path.basename(project_path)
+                    project = ProjectInfo(name=project_name, path=project_path, type='app')
+                    repo_name = self.config.repo_name_template_app.format(name=project_name)
+                    description = "Application extracted from monorepo"
+                    self.logger.info(f"Processing project: {project.name}")
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        self.extract_project_to_repo(project, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for project: {project.name}")
+                # Common path
+                if self.config.common_path:
+                    comp_name = os.path.basename(self.config.common_path)
+                    component = CommonComponent(name=comp_name, path=self.config.common_path)
+                    repo_name = self.config.repo_name_template_lib.format(name=comp_name)
+                    description = "Common library component extracted from monorepo"
+                    self.logger.info(f"Processing common component: {component.name}")
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        self.extract_common_component_to_repo(component, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for common component: {component.name}")
+
+            elif mode == 'branch':
+                # Branch mode: each branch to a repo
+                self.clone_source_repo()
+                branches = self.config.branches or []
+                if not branches:
+                    raise ValueError("BRANCHES must be provided in branch mode")
+                for branch_name in branches:
+                    name_clean = branch_name.strip()
+                    if not name_clean:
+                        continue
+                    repo_name = self.config.repo_name_template_app.format(name=name_clean)
+                    description = f"Repository extracted from branch {name_clean}"
+                    self.logger.info(f"Processing branch: {name_clean}")
+                    repo_url = self.create_github_repo(repo_name, description)
+                    if repo_url:
+                        self.extract_branch_to_repo(name_clean, repo_name, repo_url)
+                        self.logger.info(f"Repository URL: {repo_url}")
+                    else:
+                        self.logger.error(f"Failed to create repository for branch: {name_clean}")
+
             # Summary
             self.logger.info("=" * 60)
             self.logger.info("🎉 REPOSITORY SPLITTING COMPLETED")
@@ -650,10 +778,10 @@ class RepoSplitter:
             self.logger.info(f"Created {len(self.created_repos)} repositories:")
             for repo in self.created_repos:
                 self.logger.info(f"  - {repo}")
-            
+
             if self.config.dry_run:
                 self.logger.info("This was a dry run - no actual changes were made")
-            
+
         except Exception as e:
             self.logger.error(f"Error during repository splitting: {e}")
             raise
@@ -664,6 +792,15 @@ def main():
     parser = argparse.ArgumentParser(description="Advanced GitHub Monorepo Splitter AI Agent")
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making changes')
     parser.add_argument('--analyze-only', action='store_true', help='Only analyze the monorepo structure without splitting')
+    # Universal CLI options
+    parser.add_argument('--mode', choices=['auto', 'project', 'branch'], help='Splitting mode to use')
+    parser.add_argument('--branches', help='Comma-separated list of branches for branch mode')
+    parser.add_argument('--projects', help='Comma-separated list of project directories for project mode')
+    parser.add_argument('--common-path', help='Path to common libraries folder for project mode')
+    parser.add_argument('--private', dest='private_repos', action='store_true', help='Create repositories as private')
+    parser.add_argument('--default-branch', help='Default branch name for created repositories (e.g., main, master)')
+    parser.add_argument('--name-template-app', help='Template for app repos, e.g. "{name}-app"')
+    parser.add_argument('--name-template-lib', help='Template for library repos, e.g. "{name}-lib"')
     args = parser.parse_args()
     
     try:
@@ -673,7 +810,15 @@ def main():
             org='',
             github_token='',
             dry_run=args.dry_run,
-            analyze_only=args.analyze_only
+            analyze_only=args.analyze_only,
+            mode=args.mode if args.mode else 'auto',
+            branches=[b.strip() for b in args.branches.split(',')] if args.branches else None,
+            manual_projects=[p.strip() for p in args.projects.split(',')] if args.projects else None,
+            common_path=args.common_path if args.common_path else None,
+            private_repos=bool(args.private_repos),
+            default_branch=args.default_branch if args.default_branch else 'main',
+            repo_name_template_app=args.name_template_app if args.name_template_app else '{name}-app',
+            repo_name_template_lib=args.name_template_lib if args.name_template_lib else '{name}-lib'
         )
         
         with RepoSplitter(config) as splitter:
