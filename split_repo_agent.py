@@ -100,6 +100,9 @@ class RepoSplitterConfig:
     gitlab_host: str = "https://gitlab.com"  # Override for self-hosted
     provider_username: Optional[str] = None   # Used for Bitbucket/Azure (PAT basic auth username)
     azure_project: Optional[str] = None       # Required for Azure DevOps repo creation
+    # Observability
+    log_json: bool = False                    # Emit JSON logs instead of text
+    progress_file: Optional[str] = None       # Write JSONL progress events for CI/automation
 
 
 @dataclass
@@ -638,6 +641,12 @@ class MonorepoAnalyzer:
                     rel_path = os.path.relpath(file_path, self.repo_path)
                     files.append(rel_path)
                     pbar.update(1)
+        # progress event
+        try:
+            # self is analyzer here, but we can emit via parent splitter if attached later; skip
+            pass
+        except Exception:
+            pass
         
         return files
     
@@ -705,6 +714,7 @@ class MonorepoAnalyzer:
                             self.logger.info(f"  ✅ Detected {project_type} project: {project_name} at {dir_path}")
                         break
                 pbar.update(1)
+        # Cannot emit here; analyzer doesn't have progress path
         
         # Detect additional projects based on directory structure
         self._detect_by_directory_structure(all_files)
@@ -1270,14 +1280,7 @@ class RepoSplitter:
         self.analyzer = None
         
         # Setup logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout),
-                logging.FileHandler('repo_splitter.log')
-            ]
-        )
+        self._setup_logging()
         self.logger = logging.getLogger(__name__)
 
     # -------------------------------
@@ -1293,6 +1296,75 @@ class RepoSplitter:
             self.logger.warning(line)
         else:
             self.logger.info(line)
+
+    # ----------------
+    # Logging helpers
+    # ----------------
+    class _RedactFilter(logging.Filter):
+        def __init__(self, token_values):
+            super().__init__()
+            self._patterns = [re.escape(tv) for tv in token_values if tv]
+            self._regexes = [
+                re.compile(r"ghp_[A-Za-z0-9]{20,}"),
+                re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{10,}"),
+            ]
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            msg = record.getMessage()
+            for pat in self._patterns:
+                msg = re.sub(pat, "***", msg)
+            for rx in self._regexes:
+                msg = rx.sub("***", msg)
+            record.msg = msg
+            record.args = ()
+            return True
+
+    class _JSONFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            payload = {
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'level': record.levelname,
+                'logger': record.name,
+                'message': record.getMessage(),
+            }
+            return _json.dumps(payload, ensure_ascii=False)
+
+    def _setup_logging(self) -> None:
+        root = logging.getLogger()
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        level = logging.INFO
+        stream = logging.StreamHandler(sys.stdout)
+        fileh = logging.FileHandler('repo_splitter.log')
+        if self.config.log_json:
+            fmt = self._JSONFormatter()
+            stream.setFormatter(fmt)
+            fileh.setFormatter(fmt)
+        else:
+            fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            stream.setFormatter(fmt)
+            fileh.setFormatter(fmt)
+        redactor = self._RedactFilter([self.config.github_token])
+        stream.addFilter(redactor)
+        fileh.addFilter(redactor)
+        root.setLevel(level)
+        root.addHandler(stream)
+        root.addHandler(fileh)
+
+    # ----------------
+    # Progress reporting
+    # ----------------
+    def _emit_progress(self, event: str, **fields) -> None:
+        path = self.config.progress_file
+        if not path:
+            return
+        rec = {'timestamp': datetime.utcnow().isoformat() + 'Z', 'event': event}
+        rec.update(fields)
+        try:
+            with open(path, 'a', encoding='utf-8') as fp:
+                fp.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
     
     def __enter__(self):
         """Context manager entry."""

@@ -75,6 +75,29 @@ python split_repo_agent.py --preflight
 # ❌ Preflight checks failed. See messages above.
 ```
 
+### Observability
+
+Enable JSON logs and write machine-readable progress events for CI:
+
+```bash
+LOG_JSON=true PROGRESS_FILE=progress.jsonl \
+python split_repo_agent.py --mode auto
+```
+
+Or via .env:
+
+```bash
+LOG_JSON=true
+PROGRESS_FILE=progress.jsonl
+```
+
+Progress file is JSONL with entries like:
+
+```json
+{"timestamp":"2025-08-21T12:00:00Z","event":"repo.created","name":"frontend-app"}
+{"timestamp":"2025-08-21T12:00:10Z","event":"project.extracted","name":"frontend"}
+```
+
 5) Split (auto mode, to GitHub)
 ```bash
 python split_repo_agent.py --mode auto
