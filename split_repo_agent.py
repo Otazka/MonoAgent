@@ -103,6 +103,10 @@ class RepoSplitterConfig:
     # Observability
     log_json: bool = False                    # Emit JSON logs instead of text
     progress_file: Optional[str] = None       # Write JSONL progress events for CI/automation
+    # Performance & Guardrails
+    max_jobs: int = 1                         # Concurrency for extraction
+    min_free_gb: float = 2.0                  # Minimum free disk space to proceed
+    disk_factor: float = 2.0                  # Require free >= factor * repo_size
 
 
 @dataclass
@@ -1676,6 +1680,16 @@ class RepoSplitter:
         self.logger.info(f"Cloning source repository: {self.config.source_repo_url}")
         self.logger.info(f"Temporary directory: {self.temp_dir}")
         
+        # Disk guardrails before heavy operations
+        try:
+            statvfs = os.statvfs(self.temp_dir)
+            free_gb = statvfs.f_frsize * statvfs.f_bavail / (1024**3)
+            if free_gb < self.config.min_free_gb:
+                raise RuntimeError(f"Insufficient disk space: {free_gb:.2f}GB < {self.config.min_free_gb}GB")
+        except Exception as e:
+            self._log_issue('error','disk','pre-clone','Disk space check failed',str(e),'Free up space or change temp directory')
+            raise
+
         # Show progress for cloning
         with tqdm(desc="📥 Cloning repository", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
             # Always clone for analysis and local filtering (safe in dry-run)
@@ -2114,31 +2128,48 @@ class RepoSplitter:
                 # Process projects with progress bar
                 total_items = len(projects) + len(common_components)
                 with tqdm(total=total_items, desc="🚀 Creating repositories", unit="repo") as pbar:
-                    # Process projects
-                    for project_name, project in projects.items():
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                    tasks = []
+                    def submit_project(project):
                         repo_name = self._sanitize_repo_name(self.config.repo_name_template_app.format(name=project.name))
                         description = f"{project.type.title()} application extracted from monorepo"
-                        self.logger.info(f"Processing project: {project.name}")
                         repo_url = self._create_repo_provider_agnostic(repo_name, description)
                         if repo_url:
                             self.extract_project_to_repo(project, repo_name, repo_url)
                             self.logger.info(f"Repository URL: {repo_url}")
+                            self._emit_progress('repo.created', name=repo_name)
                         else:
-                            self.logger.error(f"Failed to create repository for project: {project.name}")
-                        pbar.update(1)
+                            self._log_issue('error','provider','create_repo',f"Failed to create repo {repo_name}", 'unknown', 'Check credentials and permissions')
 
-                    # Process common components
-                    for component_name, component in common_components.items():
+                    def submit_component(component):
                         repo_name = self._sanitize_repo_name(self.config.repo_name_template_lib.format(name=component.name))
                         description = "Common library component extracted from monorepo"
-                        self.logger.info(f"Processing common component: {component.name}")
                         repo_url = self._create_repo_provider_agnostic(repo_name, description)
                         if repo_url:
                             self.extract_common_component_to_repo(component, repo_name, repo_url)
                             self.logger.info(f"Repository URL: {repo_url}")
+                            self._emit_progress('repo.created', name=repo_name)
                         else:
-                            self.logger.error(f"Failed to create repository for common component: {component.name}")
-                        pbar.update(1)
+                            self._log_issue('error','provider','create_repo',f"Failed to create repo {repo_name}", 'unknown', 'Check credentials and permissions')
+
+                    max_workers = max(1, int(self.config.max_jobs))
+                    if max_workers == 1:
+                        for project in projects.values():
+                            submit_project(project)
+                            pbar.update(1)
+                        for component in common_components.values():
+                            submit_component(component)
+                            pbar.update(1)
+                    else:
+                        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                            futures = []
+                            for project in projects.values():
+                                futures.append(ex.submit(submit_project, project))
+                            for component in common_components.values():
+                                futures.append(ex.submit(submit_component, component))
+                            for _ in as_completed(futures):
+                                pbar.update(1)
 
             elif mode == 'project':
                 # Project mode: use explicitly provided projects and optional common_path
