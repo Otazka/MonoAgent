@@ -28,7 +28,7 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 
 ### Installation
 
-```bash
+   ```bash
 # Clone the repository
 git clone https://github.com/yourusername/github-monorepo-splitter.git
 cd github-monorepo-splitter
@@ -43,13 +43,13 @@ pip install github-monorepo-splitter
 ### Basic Usage
 
 1. **Create configuration file**:
-```bash
+   ```bash
 cp env.example .env
 # Edit .env with your settings
-```
+   ```
 
 2. **Run the splitter**:
-```bash
+   ```bash
 # Auto mode (recommended)
 python split_repo_agent.py --mode auto --dry-run
 
@@ -64,7 +64,7 @@ python split_repo_agent.py --mode branch --branches main,develop,feature --dry-r
 
 ### Environment Variables (.env)
 
-```bash
+   ```bash
 # Required
 SOURCE_REPO_URL=git@github.com:org/monorepo.git
 ORG=your-org-name
@@ -87,7 +87,7 @@ BRANCHES=main,develop,feature # Comma-separated branch names
 
 ### Command Line Options
 
-```bash
+   ```bash
 python split_repo_agent.py [OPTIONS]
 
 Options:
@@ -106,7 +106,7 @@ Options:
 
 ### Usage Examples
 
-```bash
+   ```bash
 # Basic analysis and splitting
 python split_repo_agent.py --mode auto --dry-run
 

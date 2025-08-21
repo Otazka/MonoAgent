@@ -1324,13 +1324,19 @@ class RepoSplitter:
             private_repos=env_private
         )
         
-        # Validate required fields
+        # Validate required fields (actionable messages)
         if not config.source_repo_url:
-            raise ValueError("SOURCE_REPO_URL is required")
+            raise ValueError(
+                "SOURCE_REPO_URL is required. Set in .env or pass via CLI. Example: git@github.com:org/monorepo.git"
+            )
         if not config.org:
-            raise ValueError("ORG is required")
+            raise ValueError(
+                "ORG is required. Set your GitHub org or username in .env (ORG=your-org)."
+            )
         if not config.github_token:
-            raise ValueError("GITHUB_TOKEN is required")
+            raise ValueError(
+                "GITHUB_TOKEN is required. Create a token with repo scope and export in .env (GITHUB_TOKEN=...)."
+            )
         
         # CLI overrides (self.config may carry explicit flags)
         if getattr(self.config, 'mode', None):
