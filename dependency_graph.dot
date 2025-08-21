@@ -1,7 +1,4 @@
 // Monorepo Dependency Graph
 digraph {
 	dpi=300 rankdir=TB size="16,12"
-	frontend [label=frontend fillcolor="#4CAF50" fontsize=12 fontweight=bold shape=box style=filled]
-	utils [label=utils fillcolor="#FFD700" fontsize=12 fontweight=bold shape=ellipse style=filled]
-	components [label=components fillcolor="#FFD700" fontsize=12 fontweight=bold shape=ellipse style=filled]
 }

@@ -1,0 +1,155 @@
+{
+  "benchmark_suite": "MonoAgent Performance",
+  "timestamp": 1755803626.221784,
+  "total_benchmarks": 8,
+  "benchmarks": {
+    "System Information": {
+      "status": "completed",
+      "timestamp": 1755803626.222734,
+      "system": {
+        "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5 (main, Jun 11 2025, 15:36:57) [Clang 17.0.0 (clang-1700.0.13.5)]",
+        "architecture": [
+          "64bit",
+          "Mach-O"
+        ],
+        "processor": "arm",
+        "memory_total_gb": 16.0,
+        "disk_total_gb": 228.27386474609375,
+        "cpu_count": 8
+      }
+    },
+    "Import Performance": {
+      "status": "completed",
+      "timestamp": 1755803626.2445812,
+      "imports": {
+        "split_repo_agent": {
+          "success": true,
+          "time_seconds": 0.5289661884307861
+        },
+        "json": {
+          "success": true,
+          "time_seconds": 1.9073486328125e-06
+        },
+        "os": {
+          "success": true,
+          "time_seconds": 1.1920928955078125e-06
+        },
+        "subprocess": {
+          "success": true,
+          "time_seconds": 9.5367431640625e-07
+        },
+        "tempfile": {
+          "success": true,
+          "time_seconds": 9.5367431640625e-07
+        },
+        "logging": {
+          "success": true,
+          "time_seconds": 0.0
+        }
+      },
+      "total_import_time_seconds": 0.5289711952209473
+    },
+    "Configuration Loading": {
+      "status": "completed",
+      "timestamp": 1755803626.773685,
+      "configurations": {
+        "minimal_config": {
+          "success": true,
+          "time_seconds": 9.059906005859375e-06,
+          "config_size": 660
+        },
+        "full_config": {
+          "success": true,
+          "time_seconds": 3.0994415283203125e-06,
+          "config_size": 657
+        }
+      }
+    },
+    "Git Operations": {
+      "status": "completed",
+      "timestamp": 1755803626.773747,
+      "operations": {
+        "git_version_check": {
+          "success": true,
+          "time_seconds": 0.019129037857055664,
+          "version": "git version 2.39.5 (Apple Git-154)"
+        },
+        "git_init": {
+          "success": true,
+          "time_seconds": 0.024206161499023438
+        }
+      }
+    },
+    "File System Operations": {
+      "status": "completed",
+      "timestamp": 1755803626.819825,
+      "operations": {
+        "file_write": {
+          "success": true,
+          "time_seconds": 0.000225067138671875,
+          "file_size_bytes": 13000
+        },
+        "file_read": {
+          "success": true,
+          "time_seconds": 4.506111145019531e-05,
+          "content_matches": true
+        },
+        "directory_create": {
+          "success": true,
+          "time_seconds": 7.605552673339844e-05
+        }
+      }
+    },
+    "Memory Usage": {
+      "status": "completed",
+      "timestamp": 1755803626.849421,
+      "initial_memory_mb": 89.671875,
+      "operations": {
+        "memory_allocation": {
+          "success": true,
+          "time_seconds": 0.001055002212524414,
+          "memory_increase_mb": 10.03125,
+          "allocated_size_mb": 10
+        }
+      },
+      "final_memory_mb": 99.703125,
+      "memory_cleanup_efficiency": 0.0
+    },
+    "Error Handling": {
+      "status": "completed",
+      "timestamp": 1755803626.8751402,
+      "operations": {
+        "exception_creation": {
+          "success": true,
+          "time_seconds": 9.179115295410156e-05,
+          "context_size": 283
+        },
+        "retry_mechanism": {
+          "success": true,
+          "time_seconds": 0.3055868148803711,
+          "retry_count": 3,
+          "result": "success"
+        }
+      }
+    },
+    "Repository Analysis": {
+      "status": "completed",
+      "timestamp": 1755803627.181064,
+      "operations": {
+        "project_structure_creation": {
+          "success": true,
+          "time_seconds": 0.0022041797637939453,
+          "projects_created": 4,
+          "files_created": 8
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_duration_seconds": 0.9623451232910156,
+    "successful_benchmarks": 8,
+    "failed_benchmarks": 0,
+    "success_rate": 100.0
+  }
+}
