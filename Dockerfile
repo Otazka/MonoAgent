@@ -10,6 +10,9 @@ RUN apt-get update \
        git git-filter-repo openssh-client graphviz \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for security
+RUN groupadd -r monoagent && useradd -r -g monoagent monoagent
+
 WORKDIR /app
 
 # Install Python dependencies
@@ -18,6 +21,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY . .
+
+# Change ownership to non-root user
+RUN chown -R monoagent:monoagent /app
+
+# Switch to non-root user
+USER monoagent
 
 # Default entrypoint runs the splitter; pass flags via `docker run ... -- <flags>` or override CMD
 ENTRYPOINT ["python", "split_repo_agent.py"]
