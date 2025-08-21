@@ -32,7 +32,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Optional, Union, Set, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 import time
 
@@ -45,6 +45,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch
 import graphviz
+import copy
 
 
 @dataclass
@@ -91,6 +92,9 @@ class RepoSplitterConfig:
     repo_name_template_lib: str = "{name}-lib"
     default_branch: str = "main"
     private_repos: bool = False
+    # GitHub API quota management
+    rate_limit_min_remaining: int = 50
+    abuse_retry_after_default: int = 60
 
 
 @dataclass
@@ -1358,6 +1362,84 @@ class RepoSplitter:
         name = re.sub(r"-+", "-", name)
         name = name.strip("-._")
         return name or "repo"
+
+    # ----------------------------
+    # package.json migration logic
+    # ----------------------------
+    @staticmethod
+    def _transform_package_json(original: Dict, *, repo_name: str, repo_url: str, is_library: bool) -> Dict:
+        """Pure function: given original package.json as dict, return migrated copy.
+
+        - Sets name, version (if missing), and repository fields
+        - Ensures private=false for apps; libraries left as configured
+        - Adds basic scripts if missing
+        - Converts workspaces-specific fields to standard standalone form
+        """
+        pkg = copy.deepcopy(original) if isinstance(original, dict) else {}
+
+        # Name
+        pkg['name'] = pkg.get('name') or repo_name
+
+        # Version
+        if 'version' not in pkg:
+            pkg['version'] = '1.0.0'
+
+        # Repository metadata
+        repo_meta = {
+            'type': 'git',
+            'url': repo_url
+        }
+        pkg['repository'] = pkg.get('repository') or repo_meta
+        pkg['homepage'] = pkg.get('homepage') or repo_url.replace('.git', '')
+
+        # Private handling
+        if not is_library:
+            # Applications typically shouldn't be private in a new public repo unless configured
+            # Respect explicit private=true if present; otherwise default to False
+            if 'private' not in pkg:
+                pkg['private'] = False
+
+        # Basic scripts fallbacks
+        scripts = pkg.get('scripts') or {}
+        if 'test' not in scripts:
+            scripts['test'] = 'echo "No tests specified" && exit 0'
+        if 'build' not in scripts:
+            # Pick a reasonable default based on presence of common toolchains
+            if 'tsconfig.json' in pkg.get('files', []) or pkg.get('types'):
+                scripts['build'] = 'tsc -p .'
+            else:
+                scripts['build'] = 'echo "No build step"'
+        pkg['scripts'] = scripts
+
+        # Workspaces clean-up for standalone
+        if 'workspaces' in pkg:
+            pkg.pop('workspaces', None)
+
+        # Engines are optional – keep as is
+        return pkg
+
+    def _migrate_node_project(self, package_json_path: str, *, repo_name: str, repo_url: str, is_library: bool) -> None:
+        """If package.json exists at path, migrate it for standalone use.
+
+        Safe to call even if the file does not exist; silently returns.
+        """
+        if not os.path.exists(package_json_path):
+            return
+        try:
+            with open(package_json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            self.logger.debug(f"Failed reading package.json: {e}")
+            return
+
+        migrated = self._transform_package_json(data, repo_name=repo_name, repo_url=repo_url, is_library=is_library)
+
+        try:
+            with open(package_json_path, 'w', encoding='utf-8') as f:
+                json.dump(migrated, f, indent=2, ensure_ascii=False)
+            self.logger.info(f"🧩 Migrated package.json at {package_json_path}")
+        except Exception as e:
+            self.logger.debug(f"Failed writing migrated package.json: {e}")
     
     def run_git_command(self, command: List[str], cwd: str = None, check: bool = True) -> subprocess.CompletedProcess:
         """Run a git command and return the result."""
@@ -1374,6 +1456,46 @@ class RepoSplitter:
             self.logger.error(f"Git command failed: {' '.join(command)}")
             self.logger.error(f"Error: {e.stderr}")
             raise
+
+    # -----------------------
+    # GitHub Rate Limit Guard
+    # -----------------------
+    def _rate_limit_guard(self) -> None:
+        if not self.github:
+            return
+        try:
+            rl = self.github.get_rate_limit().core
+            remaining = getattr(rl, 'remaining', None)
+            reset = getattr(rl, 'reset', None)
+            if remaining is not None and reset is not None and remaining <= self.config.rate_limit_min_remaining:
+                now = datetime.now(timezone.utc)
+                wait_seconds = max((reset - now).total_seconds(), 0) + 1
+                self.logger.warning(f"⏳ GitHub rate limit low (remaining={remaining}). Waiting {int(wait_seconds)}s until reset...")
+                time.sleep(wait_seconds)
+        except Exception as e:
+            self.logger.debug(f"Rate limit check failed: {e}")
+
+    def _handle_github_exception_backoff(self, exc: GithubException) -> None:
+        retry_after = None
+        try:
+            headers = getattr(exc, 'headers', None) or getattr(exc, 'data', {})
+            if isinstance(headers, dict):
+                val = headers.get('Retry-After') or headers.get('retry-after')
+                if val:
+                    retry_after = int(val)
+        except Exception:
+            pass
+
+        if retry_after is None:
+            try:
+                rl = self.github.get_rate_limit().core
+                now = datetime.now(timezone.utc)
+                retry_after = max(int((rl.reset - now).total_seconds()) + 1, self.config.abuse_retry_after_default)
+            except Exception:
+                retry_after = self.config.abuse_retry_after_default
+
+        self.logger.warning(f"🛑 GitHub API throttled: waiting {retry_after}s before retrying...")
+        time.sleep(retry_after)
     
     def clone_source_repo(self) -> str:
         """Clone the source repository to a temporary directory."""
@@ -1430,6 +1552,7 @@ class RepoSplitter:
             last_exc: Optional[Exception] = None
             for attempt in range(1, 4):
                 try:
+                    self._rate_limit_guard()
                     # Check if repo already exists
                     try:
                         existing_repo = self.github.get_repo(f"{self.config.org}/{repo_name}")
@@ -1441,6 +1564,7 @@ class RepoSplitter:
                     
                     # Try as organization first; fallback to user
                     try:
+                        self._rate_limit_guard()
                         org = self.github.get_organization(self.config.org)
                         repo = org.create_repo(
                             name=repo_name,
@@ -1449,6 +1573,7 @@ class RepoSplitter:
                             auto_init=False
                         )
                     except GithubException:
+                        self._rate_limit_guard()
                         user = self.github.get_user()
                         repo = user.create_repo(
                             name=repo_name,
@@ -1464,7 +1589,10 @@ class RepoSplitter:
                 except GithubException as e:
                     last_exc = e
                     self.logger.warning(f"GitHub API error creating {repo_name} (attempt {attempt}/3): {e}")
-                    time.sleep(min(2 ** attempt, 8))
+                    if getattr(e, 'status', None) == 403 or 'rate limit' in str(e).lower() or 'abuse' in str(e).lower():
+                        self._handle_github_exception_backoff(e)
+                    else:
+                        time.sleep(min(2 ** attempt, 8))
                     pbar.update(1)
         
         self.logger.error(f"Failed to create repository {repo_name}: {last_exc}")
@@ -1498,6 +1626,15 @@ class RepoSplitter:
                 ], cwd=project_repo_path)
                 pbar.update(1)
                 
+                # Attempt to migrate package.json for standalone usage
+                try:
+                    self._migrate_node_project(os.path.join(project_repo_path, 'package.json'),
+                                               repo_name=repo_name,
+                                               repo_url=repo_url,
+                                               is_library=False)
+                except Exception as e:
+                    self.logger.debug(f"package.json migration skipped/failed: {e}")
+
                 # Remove remote origin
                 self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=project_repo_path)
                 pbar.update(1)
@@ -1544,6 +1681,15 @@ class RepoSplitter:
                 ], cwd=component_repo_path)
                 pbar.update(1)
                 
+                # Attempt to migrate package.json for standalone usage
+                try:
+                    self._migrate_node_project(os.path.join(component_repo_path, 'package.json'),
+                                               repo_name=repo_name,
+                                               repo_url=repo_url,
+                                               is_library=True)
+                except Exception as e:
+                    self.logger.debug(f"package.json migration skipped/failed: {e}")
+
                 # Remove remote origin
                 self.run_git_command(['git', 'remote', 'remove', 'origin'], cwd=component_repo_path)
                 pbar.update(1)
