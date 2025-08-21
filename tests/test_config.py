@@ -181,5 +181,5 @@ class TestConfigLoading:
         
         assert config.mode == "auto"
         assert config.branches is None
-        # The actual implementation loads default projects from .env
-        assert config.manual_projects is not None  # Loaded from .env defaults
+        # In auto mode, manual_projects should be None since auto detection is used
+        assert config.manual_projects is None
