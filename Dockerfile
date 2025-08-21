@@ -4,18 +4,17 @@ FROM python:3.11-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# System deps: git for SCM ops, openssh-client for SSH auth, graphviz for visualization
+# System deps: git, git-filter-repo, openssh-client for SSH auth, graphviz for visualization
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       git openssh-client graphviz \
+       git git-filter-repo openssh-client graphviz \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies (and git-filter-repo tool from PyPI)
+# Install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir git-filter-repo
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY . .

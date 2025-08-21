@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: read
 
 jobs:
   build-and-push:
@@ -45,5 +46,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/monoagent:latest
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/monoagent:buildcache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
 
 
