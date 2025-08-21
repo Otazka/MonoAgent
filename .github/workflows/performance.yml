@@ -140,7 +140,7 @@ jobs:
         docker run --rm monoagent-test python -c "import split_repo_agent; print('✅ MonoAgent imports successfully')"
         
         # Test that the container can run the default command
-        docker run --rm monoagent-test --help
+        docker run --rm monoagent-test python split_repo_agent.py --help
     
     - name: Test Docker performance
       run: |

@@ -2,7 +2,8 @@
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 # System deps: git, git-filter-repo, openssh-client for SSH auth, graphviz for visualization
 RUN apt-get update \
@@ -24,6 +25,9 @@ COPY . .
 
 # Change ownership to non-root user
 RUN chown -R monoagent:monoagent /app
+
+# Create matplotlib config directory with proper permissions
+RUN mkdir -p /tmp/matplotlib && chown monoagent:monoagent /tmp/matplotlib
 
 # Switch to non-root user
 USER monoagent
