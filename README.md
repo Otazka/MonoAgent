@@ -152,15 +152,29 @@ The `.env` file is already created. Edit it with your configuration values:
 - `ORG`: GitHub organization or username to host the new repositories
 - `GITHUB_TOKEN`: GitHub Personal Access Token with repo scope
 
-### AI Agent Configuration
+### Mode and Splitting Options
 
-- `AUTO_DETECT`: Set to `true` to enable automatic project detection (recommended)
-- `MANUAL_PROJECTS`: Comma-separated list of project paths (only if `AUTO_DETECT=false`)
-- `MANUAL_COMMON_PATHS`: Comma-separated list of common component paths (only if `AUTO_DETECT=false`)
+- `MODE`: `auto` | `branch` | `project`
+  - `auto`: Detect projects and shared components automatically
+  - `branch`: Split one repo per branch listed in `BRANCHES`
+  - `project`: Split one repo per project path listed in `PROJECTS`
+- `BRANCHES`: Comma-separated list of branches (for `MODE=branch`)
+- `PROJECTS`: Comma-separated list of project directories (for `MODE=project`)
+- `COMMON_PATH`: Optional path to a common libraries folder (for `MODE=project`)
+
+### Repository Options
+
+- `PRIVATE_REPOS`: `true`/`false` to create GitHub repos as private
+- `DEFAULT_BRANCH`: Default branch for created repos (e.g., `main`, `master`)
+- `REPO_NAME_TEMPLATE_APP`: Template for app repos (default `{name}-app`)
+- `REPO_NAME_TEMPLATE_LIB`: Template for library repos (default `{name}-lib`)
+
+### Advanced Detection (optional)
+
+- `AUTO_DETECT`: Enable automatic project detection (`true`/`false`)
+- `MANUAL_PROJECTS`: Comma-separated list of project paths (used when `AUTO_DETECT=false`)
+- `MANUAL_COMMON_PATHS`: Comma-separated list of common component paths (used when `AUTO_DETECT=false`)
 - `EXCLUDE_PATTERNS`: Comma-separated list of patterns to exclude from analysis
-
-### Optional Variables
-
 - `OPENAI_API_KEY`: OpenAI API key for enhanced AI analysis
 
 ### Example Configuration
@@ -175,10 +189,20 @@ ORG=mycompany
 # GitHub Personal Access Token with repo scope
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# AI Agent Configuration
-AUTO_DETECT=true
+# Mode and Splitting Options
+MODE=auto
+# BRANCHES=frontend,backend,mobile
+# PROJECTS=apps/web,apps/api,services/auth
+# COMMON_PATH=shared
 
-# Optional: Manual configuration (only if AUTO_DETECT=false)
+# Repository Options
+PRIVATE_REPOS=false
+DEFAULT_BRANCH=main
+REPO_NAME_TEMPLATE_APP={name}-app
+REPO_NAME_TEMPLATE_LIB={name}-lib
+
+# Advanced Detection (optional)
+AUTO_DETECT=true
 # MANUAL_PROJECTS=app1,app2,services/api,frontend/web
 # MANUAL_COMMON_PATHS=common,shared,libs
 # EXCLUDE_PATTERNS=node_modules,.git,dist,build
@@ -198,17 +222,31 @@ AUTO_DETECT=true
 
 2. **Analyze only (see what would be created)**:
    ```bash
-   python split_repo_agent.py --analyze-only
+   python split_repo_agent.py --mode auto --analyze-only
    ```
 
 3. **Dry Run (Test Mode)**:
    ```bash
-   python split_repo_agent.py --dry-run
+   # Auto mode (detect projects/components)
+   python split_repo_agent.py --mode auto --dry-run
+   
+   # Project mode
+   python split_repo_agent.py --mode project --projects apps/web,apps/api --common-path shared --dry-run
+   
+   # Branch mode
+   python split_repo_agent.py --mode branch --branches main,api,mobile --dry-run
    ```
 
 4. **Actual Execution**:
    ```bash
-   python split_repo_agent.py
+   # Auto mode
+   python split_repo_agent.py --mode auto
+   
+   # Project mode
+   python split_repo_agent.py --mode project --projects apps/web,apps/api --common-path shared
+   
+   # Branch mode
+   python split_repo_agent.py --mode branch --branches main,api,mobile
    ```
 
 ### Programmatic Usage
@@ -222,9 +260,14 @@ config = RepoSplitterConfig(
     source_repo_url="git@github.com:org/monorepo.git",
     org="my-org",
     github_token="ghp_xxx",
-    dry_run=False,
-    analyze_only=False,
-    auto_detect=True
+    mode="auto",                  # or "project" | "branch"
+    branches=["main", "api"],     # for branch mode
+    manual_projects=["apps/web", "apps/api"],  # for project mode
+    common_path="shared",         # optional common libs path
+    private_repos=True,            # create private repos
+    default_branch="main",        # default branch name
+    repo_name_template_app="{name}-app",
+    repo_name_template_lib="{name}-lib"
 )
 
 with RepoSplitter(config) as splitter:
@@ -302,11 +345,11 @@ The AI agent recognizes various project types:
 - **And more...**
 
 ### 3. 🔧 Repository Extraction
-For each detected project:
-- Creates a new GitHub repository via API
-- Uses `git filter-repo` to extract only the project's files
+For each detected or configured unit (project/branch):
+- Creates a new GitHub repository via API (respects privacy settings)
+- Uses `git filter-repo` to extract only relevant files when needed
 - Preserves complete git history for the extracted files
-- Pushes to the new repository with `main` branch
+- Pushes to the new repository with the configured default branch
 
 ### 4. 📦 Common Component Extraction
 For detected shared components:
@@ -458,8 +501,9 @@ After setting up your configuration:
 4. **Execute with `python split_repo_agent.py --mode project`**
 
 The agent will create repositories based on your mode:
-- **Branch Mode**: One repository per branch + common-libs (if specified)
-- **Project Mode**: One repository per project + common-libs (if specified)
+- **Auto Mode**: One repository per detected project + one per detected common component
+- **Branch Mode**: One repository per branch
+- **Project Mode**: One repository per project + optional common-libs
 
 ## Additional Tools
 
