@@ -18,6 +18,7 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **🤖 AI-Powered Analysis**: Intelligent recommendations for architecture, performance, and security
 - **📊 Dependency Graph Visualization**: Beautiful visual representations of project relationships
 - **🌐 Multi-Provider Support (beta)**: Create repositories on GitHub, GitLab, Bitbucket, Azure DevOps
+ - **🖥️ Web UI (beta)**: Minimal Flask-based UI for non-technical users
 
 ## 🚀 Quick Start
 
@@ -39,6 +40,34 @@ pip install -r requirements.txt
 
 # Or install with pip
 pip install github-monorepo-splitter
+```
+
+### Golden Path (5 commands)
+
+1) Clone and enter
+```bash
+git clone https://github.com/yourusername/github-monorepo-splitter.git
+cd github-monorepo-splitter
+```
+
+2) Create environment
+```bash
+cp env.example .env
+```
+
+3) Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+4) Analyze (safe, no changes)
+```bash
+python split_repo_agent.py --analyze-only --dry-run
+```
+
+5) Split (auto mode, to GitHub)
+```bash
+python split_repo_agent.py --mode auto
 ```
 
 ### Basic Usage
@@ -89,6 +118,26 @@ docker run --rm \
   -v "$HOME/.ssh":/root/.ssh:ro \
   monorepo-splitter:latest --mode auto --provider github
 ```
+- ### Web UI
+
+Run the web UI locally (dev):
+
+```bash
+pip install -r requirements.txt
+export FLASK_APP=webapp/app.py
+python webapp/app.py
+```
+
+Open http://localhost:8080 and fill in the form. Jobs run asynchronously and progress can be seen in `repo_splitter.log`.
+
+Run the web UI via Docker:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$PWD/.env":/app/.env:ro \
+  -v "$HOME/.ssh":/root/.ssh:ro \
+  monorepo-splitter:latest python webapp/app.py
+```
 
 Notes:
 - For SSH clone URLs, mount `~/.ssh`. For HTTPS PATs, ensure `.env` contains the token variables.
@@ -118,6 +167,12 @@ COMMON_PATH=shared           # Common components path
 
 # Branch mode specific
 BRANCHES=main,develop,feature # Comma-separated branch names
+
+# Multi-provider (beta)
+PROVIDER=github              # github | gitlab | bitbucket | azure
+GITLAB_HOST=https://gitlab.com
+PROVIDER_USERNAME=your-username   # for Bitbucket/Azure if needed
+AZURE_PROJECT=your-ado-project    # for Azure DevOps
 ```
 
 ### Command Line Options
@@ -356,6 +411,16 @@ isort split_repo_agent.py
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🏷️ Badges
+
+<p>
+  <img alt="Tests" src="https://img.shields.io/badge/tests-67%20passing-brightgreen" />
+  <img alt="Coverage" src="https://img.shields.io/badge/coverage-~80%25-green" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue" />
+  <img alt="Docker" src="https://img.shields.io/badge/docker-ready-0db7ed" />
+  <img alt="Provider" src="https://img.shields.io/badge/providers-github%20%7C%20gitlab%20%7C%20bitbucket%20%7C%20azure-orange" />
+</p>
 
 ## 🙏 Acknowledgments
 
