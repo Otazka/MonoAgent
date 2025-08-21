@@ -133,13 +133,16 @@ jobs:
     
     - name: Test Docker health check
       run: |
-        # Start container in background
+        # Start container in background with a long-running command
         docker run -d --name monoagent-container monoagent-test sleep 60
         
         # Wait for container to be ready
         sleep 10
         
-        # Check health status
+        # Check health status using the built-in health check
+        docker inspect monoagent-container --format='{{.State.Health.Status}}'
+        
+        # Test monitoring script directly
         docker exec monoagent-container python monitoring.py --health-check
         
         # Cleanup
