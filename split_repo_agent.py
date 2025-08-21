@@ -1840,9 +1840,7 @@ class RepoSplitter:
             raise
 
         # Show progress for cloning
-        with tqdm(
-            desc="📥 Cloning repository", unit="B", unit_scale=True, unit_divisor=1024
-        ):
+        with tqdm(desc="📥 Cloning repository", unit="B", unit_scale=True, unit_divisor=1024):
             # Always clone for analysis and local filtering (safe in dry-run)
             self.run_git_command(
                 ["git", "clone", "--mirror", self.config.source_repo_url, self.source_repo_path]
@@ -2093,6 +2091,7 @@ class RepoSplitter:
           - provider_username and github_token as PAT credentials
         """
         import base64
+
         org = self.config.org
         project = self.config.azure_project
         if not project:
