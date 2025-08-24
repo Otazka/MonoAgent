@@ -18,7 +18,6 @@ An intelligent AI-powered tool that automatically analyzes and splits GitHub mon
 - **🤖 AI-Powered Analysis**: Intelligent recommendations for architecture, performance, and security
 - **📊 Dependency Graph Visualization**: Beautiful visual representations of project relationships
 - **🌐 Multi-Provider Support (beta)**: Create repositories on GitHub, GitLab, Bitbucket, Azure DevOps
- - **🖥️ Web UI (beta)**: Minimal Flask-based UI for non-technical users
 
 ## 🚀 Quick Start
 
@@ -494,7 +493,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📧 Email: your.email@example.com
+- 📧 Email: creatorsurovtseva@gmail.com
 - 🐛 Issues: [GitHub Issues](https://github.com/Otazka/MonoAgent/issues)
 - 📖 Documentation: [Project Wiki](https://github.com/Otazka/MonoAgent/wiki)
 
